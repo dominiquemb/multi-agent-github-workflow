@@ -3,10 +3,11 @@
 ## Process for Tasks with UI Changes
 
 1. **Sub-agent** works on the task inside an isolated Docker container on the remote server
-2. **Sub-agent** runs Playwright E2E tests → screenshots saved to `e2e/screenshots/`
-3. **Sub-agent** creates a GitHub PR when complete → **You get notified**
-4. **Assistant** reviews the code using `/review`
-5. **User** reviews screenshots in `e2e/screenshots/` and the PR
+2. **Docker container records** the screen + takes screenshots during execution
+3. **Sub-agent** runs Playwright E2E tests → screenshots saved to `e2e/screenshots/`
+4. **Sub-agent** creates a GitHub PR with screenshots/videos embedded → **You get notified**
+5. **Assistant** reviews the code using `/review`
+6. **User** reviews screenshots/videos in PR and `e2e/screenshots/`
 
 ## Remote Server Setup (40.160.8.176)
 
@@ -28,14 +29,34 @@
 
 ### Background Task System with Docker
 
-Tasks run in parallel inside isolated Docker containers. When complete, a PR is created and you get a GitHub notification.
+Tasks run in parallel inside isolated Docker containers with screen recording. When complete, a PR is created with embedded screenshots and you get a GitHub notification.
 
 **Scripts:**
 - `~/task-run.sh` - Start a background task in Docker
 - `~/task-status.sh` - Check task status
 - `~/task-clean.sh` - Clean up completed tasks
 - `~/tasks/scripts/` - Task implementation scripts
-- `~/docker-dev-container/` - Docker configuration
+- `~/docker-dev-container/` - Docker configuration with screen recording
+
+### Docker Container Features
+
+Each container includes:
+- **Xvfb** - Virtual display for headless screen recording
+- **Fluxbox** - Lightweight window manager
+- **FFmpeg** - Screen recording (MP4)
+- **scrot/ImageMagick** - Screenshots (PNG)
+- **Playwright** - E2E testing with Chromium
+- **Node.js 20** - JavaScript/TypeScript runtime
+
+### What Gets Captured
+
+1. **Screen Recording** - Full MP4 video of task execution
+2. **Screenshots** - PNG images at key steps:
+   - After dependency installation
+   - After task completion
+   - During E2E tests
+3. **Terminal Log** - All command output
+4. **Summary Report** - Markdown file with all assets linked
 
 ### Starting a Task
 
@@ -81,7 +102,8 @@ Each task:
 - Runs in its own isolated Docker container
 - Has its own branch name with timestamp
 - Uses a random host port to avoid conflicts
-- Creates a separate PR when complete
+- Records screen and takes screenshots
+- Creates a separate PR with embedded media when complete
 - Triggers a GitHub notification
 
 ### How Docker Isolation Works
@@ -91,25 +113,72 @@ Each task:
    - Repository mounted at `/workspace`
    - Isolated `node_modules` volume
    - GitHub token for PR creation
-3. Task executes inside container
+   - Virtual display (Xvfb) for screen recording
+3. Task executes inside container:
+   - Screen recording starts automatically
+   - Screenshots taken at key steps
+   - Terminal output captured
 4. Container stops and is removed
 5. Git changes persist (mounted volume)
-6. PR created from host (git config set)
+6. Screenshots copied to repo: `e2e/screenshots/task-<name>/`
+7. PR created with embedded screenshots and recordings
 
 ## Screenshot Location
 
-Screenshots are saved in: `e2e/screenshots/` (inside the repo, persists after container stops)
+Screenshots and recordings are saved in: `e2e/screenshots/task-<task-name>/`
+
+Structure:
+```
+e2e/screenshots/
+└── task-draggable-columns/
+    ├── draggable-columns-after-install.png
+    ├── draggable-columns-after-task.png
+    ├── draggable-columns-execution.mp4    # Screen recording
+    ├── draggable-columns-summary.md       # Auto-generated report
+    └── draggable-columns-terminal.log     # Full terminal output
+```
+
+## PR Body Format
+
+PRs automatically include:
+
+```markdown
+## Task: draggable-columns
+
+**Description:** Implement draggable column reordering
+
+**Completed:** 2026-03-25T20:45:00Z
+
+**Container:** task-draggable-columns-20260325-204500
+
+## Screenshots & Recordings
+
+![after-install](e2e/screenshots/task-draggable-columns/after-install.png)
+![after-task](e2e/screenshots/task-draggable-columns/after-task.png)
+
+**Recording:** [execution.mp4](e2e/screenshots/task-draggable-columns/execution.mp4)
+
+## Execution Summary
+See [summary.md](e2e/screenshots/task-draggable-columns/summary.md) for full details.
+
+---
+
+**Screenshots:** Check `e2e/screenshots/task-draggable-columns/` for visual changes and recordings.
+```
 
 ## Review Process
 
 1. Task runs in Docker container on remote server
-2. Task creates branch, makes changes, runs tests
-3. Task creates PR → **GitHub notifies you**
-4. **Assistant** reviews code using `/review <pr-number>`
-5. **User** reviews:
+2. Screen recording + screenshots captured automatically
+3. Task creates branch, makes changes, runs tests
+4. Task creates PR with embedded media → **GitHub notifies you**
+5. **Assistant** reviews code using `/review <pr-number>`
+6. **User** reviews:
    - PR changes on GitHub
-   - Screenshots in `e2e/screenshots/`
-6. Merge or request changes
+   - Embedded screenshots in PR body
+   - Screen recording (MP4)
+   - Summary report
+7. Merge or request changes
 
 ## Example Workflow
 
@@ -120,9 +189,15 @@ ssh ubuntu@40.160.8.176 "./task-run.sh my-feature 'Add new feature' ~/tasks/scri
 # Check status later
 ssh ubuntu@40.160.8.176 "./task-status.sh"
 
-# After PR notification, review code
+# After PR notification:
+# 1. Review code
 /review <pr-number>
 
-# Check screenshots
-ls -la ~/repos/healthtrac360-web/e2e/screenshots/
+# 2. View screenshots in PR body (embedded)
+
+# 3. Check full resolution screenshots
+ls -la ~/repos/healthtrac360-web/e2e/screenshots/task-my-feature/
+
+# 4. Watch screen recording
+# Download the MP4 from the repo or view via GitHub
 ```
