@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  dev-container:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${CONTAINER_NAME:-dev-container}
+    volumes:
+      # Mount the repository
+      - ${REPO_PATH:-../repos/healthtrac360-web}:/workspace
+      # Shared node_modules volume (will be cleaned up between runs)
+      - node_modules:/workspace/node_modules
+    ports:
+      - "${HOST_PORT:-5173}:${CONTAINER_PORT:-5173}"
+    environment:
+      - NODE_ENV=development
+      - CI=true
+    working_dir: /workspace
+    tty: true
+    stdin_open: true
+
+volumes:
+  node_modules:

@@ -1,0 +1,24 @@
+# Git ignore for docker-setup
+
+# Sensitive files
+.gh_token
+*_rsa
+*_ed25519
+*.pub
+
+# Build artifacts
+__pycache__/
+*.pyc
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# Task runtime files
+*.status
+*.runner.sh
+tasks/
+
+# Docker volumes
+node_modules_*/
