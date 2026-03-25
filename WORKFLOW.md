@@ -2,7 +2,7 @@
 
 ## Process for Tasks with UI Changes
 
-1. **Sub-agent** works on the task (background process on remote server)
+1. **Sub-agent** works on the task inside an isolated Docker container on the remote server
 2. **Sub-agent** runs Playwright E2E tests → screenshots saved to `e2e/screenshots/`
 3. **Sub-agent** creates a GitHub PR when complete → **You get notified**
 4. **Assistant** reviews the code using `/review`
@@ -13,12 +13,12 @@
 ### Repositories (`~/repos/`)
 
 **HealthTrac360:**
-- `healthtrac360-web`
-- `healthtrac360-api`
-- `healthtrac360-mobile`
+- `healthtrac360-web` (arsmetr-frontend)
+- `healthtrac360-api` (arsmetr-backend)
+- `healthtrac360-mobile` (arsmetr-mobile)
 
 **Neptune:**
-- `neptune` (frontend)
+- `neptune` (neptune-frontend)
 - `neptune-api`
 - `neptune-mobile`
 
@@ -26,25 +26,30 @@
 - `pythia-frontend`
 - `pythia-api`
 
-### Background Task System
+### Background Task System with Docker
 
-Tasks run in parallel on the remote server. When complete, a PR is created and you get a GitHub notification.
+Tasks run in parallel inside isolated Docker containers. When complete, a PR is created and you get a GitHub notification.
 
 **Scripts:**
-- `~/task-run.sh` - Start a background task
+- `~/task-run.sh` - Start a background task in Docker
 - `~/task-status.sh` - Check task status
 - `~/task-clean.sh` - Clean up completed tasks
 - `~/tasks/scripts/` - Task implementation scripts
+- `~/docker-dev-container/` - Docker configuration
 
 ### Starting a Task
 
 ```bash
-ssh ubuntu@40.160.8.176 "./task-run.sh <task-name> '<description>' <task-script>"
+ssh ubuntu@40.160.8.176 "./task-run.sh <task-name> '<description>' <task-script> [repo-name]"
 ```
 
-Example:
+Examples:
 ```bash
+# HealthTrac360 web (default repo)
 ssh ubuntu@40.160.8.176 "./task-run.sh draggable-columns 'Implement draggable column reordering' ~/tasks/scripts/draggable-columns.sh"
+
+# Different repository
+ssh ubuntu@40.160.8.176 "./task-run.sh my-feature 'Add new feature' ~/tasks/scripts/my-feature.sh neptune-frontend"
 ```
 
 ### Checking Status
@@ -58,45 +63,46 @@ ssh ubuntu@40.160.8.176 "./task-status.sh draggable-columns"
 
 # Watch logs live
 ssh ubuntu@40.160.8.176 "tail -f ~/tasks/logs/draggable-columns.log"
+
+# View container logs
+ssh ubuntu@40.160.8.176 "cat ~/tasks/logs/draggable-columns.log.task"
 ```
 
 ### Running Multiple Tasks in Parallel
 
 ```bash
-# Start multiple tasks simultaneously
-ssh ubuntu@40.160.8.176 "./task-run.sh task-1 'Description 1' ~/tasks/scripts/task1.sh" &
-ssh ubuntu@40.160.8.176 "./task-run.sh task-2 'Description 2' ~/tasks/scripts/task2.sh" &
-ssh ubuntu@40.160.8.176 "./task-run.sh task-3 'Description 3' ~/tasks/scripts/task3.sh" &
+# Start multiple tasks simultaneously (each in its own Docker container)
+ssh ubuntu@40.160.8.176 "./task-run.sh task-1 'Description 1' ~/tasks/scripts/task1.sh healthtrac360-web" &
+ssh ubuntu@40.160.8.176 "./task-run.sh task-2 'Description 2' ~/tasks/scripts/task2.sh neptune-frontend" &
+ssh ubuntu@40.160.8.176 "./task-run.sh task-3 'Description 3' ~/tasks/scripts/task3.sh pythia-frontend" &
 ```
 
 Each task:
-- Runs independently in the background
-- Creates its own git branch
+- Runs in its own isolated Docker container
+- Has its own branch name with timestamp
+- Uses a random host port to avoid conflicts
 - Creates a separate PR when complete
 - Triggers a GitHub notification
 
-### Docker Dev Containers (Optional)
+### How Docker Isolation Works
 
-For tasks requiring isolated environments:
-
-```bash
-cd ~/docker-dev-container
-
-# Set unique values for each container
-export CONTAINER_NAME=agent-task-1
-export HOST_PORT=3001
-
-# Build and start
-docker-compose up -d --build
-```
+1. Task runner creates unique container name: `task-<name>-<timestamp>`
+2. Docker container starts with:
+   - Repository mounted at `/workspace`
+   - Isolated `node_modules` volume
+   - GitHub token for PR creation
+3. Task executes inside container
+4. Container stops and is removed
+5. Git changes persist (mounted volume)
+6. PR created from host (git config set)
 
 ## Screenshot Location
 
-Screenshots are saved in: `e2e/screenshots/` (inside the repo)
+Screenshots are saved in: `e2e/screenshots/` (inside the repo, persists after container stops)
 
 ## Review Process
 
-1. Task runs in background on remote server
+1. Task runs in Docker container on remote server
 2. Task creates branch, makes changes, runs tests
 3. Task creates PR → **GitHub notifies you**
 4. **Assistant** reviews code using `/review <pr-number>`
@@ -109,7 +115,7 @@ Screenshots are saved in: `e2e/screenshots/` (inside the repo)
 
 ```bash
 # Start a task
-ssh ubuntu@40.160.8.176 "./task-run.sh my-feature 'Add new feature' ~/tasks/scripts/my-feature.sh"
+ssh ubuntu@40.160.8.176 "./task-run.sh my-feature 'Add new feature' ~/tasks/scripts/my-feature.sh healthtrac360-web"
 
 # Check status later
 ssh ubuntu@40.160.8.176 "./task-status.sh"
@@ -118,5 +124,5 @@ ssh ubuntu@40.160.8.176 "./task-status.sh"
 /review <pr-number>
 
 # Check screenshots
-ls -la healthtrac360-web/e2e/screenshots/
+ls -la ~/repos/healthtrac360-web/e2e/screenshots/
 ```
