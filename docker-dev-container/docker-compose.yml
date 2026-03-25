@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  dev-container:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${CONTAINER_NAME:-dev-agent}
+    volumes:
+      # Mount the specific repo for this task
+      - ${REPO_PATH:-../../repos}:/workspace
+      # Keep node_modules separate per project
+      - node_modules:/workspace/node_modules
+      # Mount screenshots directory for E2E tests
+      - ../../healthtrac360-web/e2e/screenshots:/workspace/e2e/screenshots
+    ports:
+      - "${HOST_PORT:-3000}:${CONTAINER_PORT:-3000}"
+    environment:
+      - NODE_ENV=development
+      - CI=true
+    working_dir: /workspace
+    tty: true
+    stdin_open: true
+
+volumes:
+  node_modules:
