@@ -239,7 +239,11 @@ $SCREENSHOT_GALLERY
 ---
 *This PR was automatically created when the background task completed.*" \\
         --base main \\
-        --head $BRANCH_NAME)
+        --head $BRANCH_NAME \\
+        --assignee dominiquemb)
+
+    # Add comment mentioning user to trigger notification
+    gh pr comment \$PR_URL --body "@dominiquemb This PR is ready for your review!" 2>/dev/null || true
 
     echo "" >> $LOG_FILE
     echo "=========================================" >> $LOG_FILE

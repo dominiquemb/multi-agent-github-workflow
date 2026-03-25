@@ -1,0 +1,49 @@
+name: PR Notification
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    
+    steps:
+      - name: Post notification comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const notifyUser = 'dominiquemb';
+            const branchName = context.payload.pull_request.head.ref;
+            const issue_number = context.issue.number;
+            
+            // Only process task branches
+            if (!branchName.startsWith('task/')) {
+              console.log(`Skipping PR #${issue_number} - not a task branch`);
+              return;
+            }
+            
+            const taskMatch = branchName.match(/task\/(.+?)-\d{8}-\d{6}/);
+            const taskName = taskMatch ? taskMatch[1] : 'unknown';
+            
+            const body = `## 🤖 Automated PR Notification
+
+            **Task:** \`${taskName}\`
+
+            @${notifyUser} This PR was automatically created by the background task runner and is ready for your review.
+
+            ---
+            *This comment was posted automatically to ensure you receive a notification.*`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue_number,
+              body: body
+            });
+            
+            console.log(`Posted notification comment on PR #${issue_number}`);
