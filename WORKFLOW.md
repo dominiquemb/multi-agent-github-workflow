@@ -80,7 +80,34 @@ docker-compose down
 
 ## Screenshot Location
 
-Screenshots are saved locally in: `e2e/screenshots/`
+E2E test screenshots are saved to the central screenshots directory:
+
+**Location:** `/Users/dominiquemb/dev/e2e-screenshots/`
+
+**Structure:**
+```
+e2e-screenshots/
+├── login/                          # Login page screenshots
+│   ├── login-page-autofill-fix.png
+│   ├── login-email-field.png
+│   ├── login-password-field.png
+│   ├── login-page-trust-badges.png
+│   ├── login-page-light-mode.png
+│   └── login-page-dark-mode.png
+└── dispatch-dashboard/             # Dispatch Dashboard screenshots
+    ├── dispatch-columns-menu-open.png
+    ├── dispatch-separate-address-columns.png
+    ├── dispatch-order-group-column.png
+    ├── dispatch-all-columns-visible.png
+    ├── dispatch-weight-column-hidden.png
+    ├── dispatch-dashboard-full-table-view.png
+    ├── dispatch-columns-configuration-menu.png
+    └── dispatch-address-columns-data.png
+```
+
+**Sub-folders by feature:**
+- `login/` - Login page visual tests (autofill fix, trust badges, dark/light mode)
+- `dispatch-dashboard/` - Dispatch Dashboard configurable columns tests
 
 ## Review Process
 
