@@ -2,14 +2,11 @@
 
 ## Process for Tasks with UI Changes
 
-1. **Sub-agent** works on the task inside an isolated Docker container
-2. **Sub-agent** runs Playwright E2E tests → screenshots saved locally to `e2e/screenshots/`
-3. **Assistant** reviews the code for:
-   - Correctness
-   - Security
-   - Code quality
-   - Performance
-4. **User** reviews the screenshots for visual/UI verification
+1. **Sub-agent** works on the task (background process on remote server)
+2. **Sub-agent** runs Playwright E2E tests → screenshots saved to `e2e/screenshots/`
+3. **Sub-agent** creates a GitHub PR when complete → **You get notified**
+4. **Assistant** reviews the code using `/review`
+5. **User** reviews screenshots in `e2e/screenshots/` and the PR
 
 ## Remote Server Setup (40.160.8.176)
 
@@ -29,100 +26,97 @@
 - `pythia-frontend`
 - `pythia-api`
 
-### Docker Dev Containers (`~/docker-dev-container/`)
+### Background Task System
 
-- Isolated containers for each sub-agent
-- Node.js v20, Playwright, Chromium installed
-- Screenshots map to local `e2e/screenshots/` directory
+Tasks run in parallel on the remote server. When complete, a PR is created and you get a GitHub notification.
 
-### Starting a Container
+**Scripts:**
+- `~/task-run.sh` - Start a background task
+- `~/task-status.sh` - Check task status
+- `~/task-clean.sh` - Clean up completed tasks
+- `~/tasks/scripts/` - Task implementation scripts
+
+### Starting a Task
+
+```bash
+ssh ubuntu@40.160.8.176 "./task-run.sh <task-name> '<description>' <task-script>"
+```
+
+Example:
+```bash
+ssh ubuntu@40.160.8.176 "./task-run.sh draggable-columns 'Implement draggable column reordering' ~/tasks/scripts/draggable-columns.sh"
+```
+
+### Checking Status
+
+```bash
+# All tasks
+ssh ubuntu@40.160.8.176 "./task-status.sh"
+
+# Specific task
+ssh ubuntu@40.160.8.176 "./task-status.sh draggable-columns"
+
+# Watch logs live
+ssh ubuntu@40.160.8.176 "tail -f ~/tasks/logs/draggable-columns.log"
+```
+
+### Running Multiple Tasks in Parallel
+
+```bash
+# Start multiple tasks simultaneously
+ssh ubuntu@40.160.8.176 "./task-run.sh task-1 'Description 1' ~/tasks/scripts/task1.sh" &
+ssh ubuntu@40.160.8.176 "./task-run.sh task-2 'Description 2' ~/tasks/scripts/task2.sh" &
+ssh ubuntu@40.160.8.176 "./task-run.sh task-3 'Description 3' ~/tasks/scripts/task3.sh" &
+```
+
+Each task:
+- Runs independently in the background
+- Creates its own git branch
+- Creates a separate PR when complete
+- Triggers a GitHub notification
+
+### Docker Dev Containers (Optional)
+
+For tasks requiring isolated environments:
 
 ```bash
 cd ~/docker-dev-container
 
-# Set unique values for each agent
+# Set unique values for each container
 export CONTAINER_NAME=agent-task-1
-export REPO_PATH=../../repos/healthtrac360-web
 export HOST_PORT=3001
-export CONTAINER_PORT=3000
 
 # Build and start
 docker-compose up -d --build
-
-# Enter container
-docker exec -it $CONTAINER_NAME bash
-```
-
-### Port Mapping for Parallel Agents
-
-- Agent 1: `3001:3000`
-- Agent 2: `3002:3000`
-- Agent 3: `3003:3000`
-
-### Running E2E Tests with Screenshots
-
-```bash
-# Inside the container
-cd /workspace
-npm install
-npm run test:e2e
-
-# Screenshots saved to local e2e/screenshots/
-```
-
-### Stopping a Container
-
-```bash
-cd ~/docker-dev-container
-export CONTAINER_NAME=agent-task-1
-docker-compose down
 ```
 
 ## Screenshot Location
 
-E2E test screenshots are saved to the central screenshots directory:
-
-**Location:** `/Users/dominiquemb/dev/e2e-screenshots/`
-
-**Structure:**
-```
-e2e-screenshots/
-├── login/                          # Login page screenshots
-│   ├── login-page-autofill-fix.png
-│   ├── login-email-field.png
-│   ├── login-password-field.png
-│   ├── login-page-trust-badges.png
-│   ├── login-page-light-mode.png
-│   └── login-page-dark-mode.png
-└── dispatch-dashboard/             # Dispatch Dashboard screenshots
-    ├── dispatch-columns-menu-open.png
-    ├── dispatch-separate-address-columns.png
-    ├── dispatch-order-group-column.png
-    ├── dispatch-all-columns-visible.png
-    ├── dispatch-weight-column-hidden.png
-    ├── dispatch-dashboard-full-table-view.png
-    ├── dispatch-columns-configuration-menu.png
-    └── dispatch-address-columns-data.png
-```
-
-**Sub-folders by feature:**
-- `login/` - Login page visual tests (autofill fix, trust badges, dark/light mode)
-- `dispatch-dashboard/` - Dispatch Dashboard configurable columns tests
+Screenshots are saved in: `e2e/screenshots/` (inside the repo)
 
 ## Review Process
 
-1. Sub-agent completes task in Docker container
-2. Sub-agent runs E2E tests → screenshots generated
-3. **Assistant** reviews code using `/review` command
-4. **User** reviews screenshots in `e2e/screenshots/` directory
+1. Task runs in background on remote server
+2. Task creates branch, makes changes, runs tests
+3. Task creates PR → **GitHub notifies you**
+4. **Assistant** reviews code using `/review <pr-number>`
+5. **User** reviews:
+   - PR changes on GitHub
+   - Screenshots in `e2e/screenshots/`
+6. Merge or request changes
 
-## Example Usage
+## Example Workflow
 
 ```bash
-# Sub-agent runs E2E tests with screenshots
-cd healthtrac360-web
-npm run test:e2e
+# Start a task
+ssh ubuntu@40.160.8.176 "./task-run.sh my-feature 'Add new feature' ~/tasks/scripts/my-feature.sh"
 
-# Screenshots generated in:
-# e2e/screenshots/*.png
+# Check status later
+ssh ubuntu@40.160.8.176 "./task-status.sh"
+
+# After PR notification, review code
+/review <pr-number>
+
+# Check screenshots
+ls -la healthtrac360-web/e2e/screenshots/
 ```
