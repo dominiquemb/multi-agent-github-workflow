@@ -1,230 +1,231 @@
 #!/bin/bash
-# Task Runner Orchestrator
-# All configuration passed as parameters - nothing stored in repositories
-#
-# Usage: ./task-run.sh --project healthtrac --task "my-task" --desc "Description" --script /path/to/script.sh
 
-set -e
+# Create logs directory
+mkdir -p ~/tasks/logs
 
-# Parse command line arguments
-PROJECT=""
-TASK_NAME=""
-DESCRIPTION=""
-SCRIPT_PATH=""
-NOTIFY_USER="dominiquemb"
-BRANCH_PREFIX="task/"
+# Detect if running as root
+if [ "$(id -u)" = "0" ]; then
+    RUNNING_AS_ROOT=true
+    HOME_DIR=/home/ubuntu
+    export HOME=$HOME_DIR
+else
+    RUNNING_AS_ROOT=false
+    HOME_DIR=$HOME
+fi
 
+# Source config
+[ -f $HOME_DIR/.task-project-config.sh ] && source $HOME_DIR/.task-project-config.sh
+[ -f $HOME_DIR/.task-model-config.sh ] && source $HOME_DIR/.task-model-config.sh
+
+PROJECT="" TASK_NAME="" DESCRIPTION="" SCRIPT_PATH="" NOTIFY_USER="dominiquemb"
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --project|-p)
-            PROJECT="$2"
-            shift 2
-            ;;
-        --task|-t)
-            TASK_NAME="$2"
-            shift 2
-            ;;
-        --desc|-d)
-            DESCRIPTION="$2"
-            shift 2
-            ;;
-        --script|-s)
-            SCRIPT_PATH="$2"
-            shift 2
-            ;;
-        --user|-u)
-            NOTIFY_USER="$2"
-            shift 2
-            ;;
-        --branch-prefix)
-            BRANCH_PREFIX="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Usage: $0 --project <healthtrac|neptune|pythia> --task <name> --desc <description> --script <path> [--user <github-username>]"
-            exit 1
-            ;;
+        --project|-p) PROJECT="$2"; shift 2 ;;
+        --task|-t) TASK_NAME="$2"; shift 2 ;;
+        --desc|-d) DESCRIPTION="$2"; shift 2 ;;
+        --script|-s) SCRIPT_PATH="$2"; shift 2 ;;
+        --user|-u) NOTIFY_USER="$2"; shift 2 ;;
+        *) exit 1 ;;
     esac
 done
 
-# Validate required parameters
-if [ -z "$PROJECT" ] || [ -z "$TASK_NAME" ] || [ -z "$DESCRIPTION" ] || [ -z "$SCRIPT_PATH" ]; then
-    echo "Error: Missing required parameters"
-    echo "Usage: $0 --project <healthtrac|neptune|pythia> --task <name> --desc <description> --script <path>"
-    exit 1
-fi
+[ -z "$PROJECT" ] || [ -z "$TASK_NAME" ] || [ -z "$SCRIPT_PATH" ] && { echo "Usage: --project --task --desc --script"; exit 1; }
 
-if [ ! -f "$SCRIPT_PATH" ]; then
-    echo "Error: Script not found: $SCRIPT_PATH"
-    exit 1
-fi
+# Get project config
+REPOS_VAR="${PROJECT}_repos"
+PRIMARY_VAR="${PROJECT}_primary"
+REPOS=$(eval echo "\$""$REPOS_VAR")
+PRIMARY_REPO=$(eval echo "\$""$PRIMARY_VAR")
+[ -z "$REPOS" ] && { echo "Unknown project: $PROJECT"; exit 1; }
 
-# Define repositories for each project (passed at runtime, not stored)
-case $PROJECT in
-    healthtrac|healthtrac360)
-        REPOS="healthtrac360-web healthtrac360-api healthtrac360-mobile"
-        PRIMARY_REPO="healthtrac360-web"
-        ;;
-    neptune)
-        REPOS="neptune neptune-api neptune-mobile"
-        PRIMARY_REPO="neptune"
-        ;;
-    pythia)
-        REPOS="pythia-frontend pythia-api"
-        PRIMARY_REPO="pythia-frontend"
-        ;;
-    *)
-        echo "Unknown project: $PROJECT"
-        echo "Valid options: healthtrac, neptune, pythia"
-        exit 1
-        ;;
-esac
-
-# Generate unique identifiers
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-CONTAINER_NAME="task-${TASK_NAME}-${TIMESTAMP}"
-BRANCH_NAME="${BRANCH_PREFIX}${TASK_NAME}-${TIMESTAMP}"
-
-# Get git remote URLs from local clones (these are discovered at runtime)
-REPOS_DIR="${REPOS_DIR:-$HOME/repos}"
+# Build git remotes from config URLs
 GIT_REMOTES=""
 for repo in $REPOS; do
-    if [ -d "$REPOS_DIR/$repo/.git" ]; then
-        REMOTE=$(cd "$REPOS_DIR/$repo" && git remote get-url origin 2>/dev/null || echo "")
-        if [ -n "$REMOTE" ]; then
-            GIT_REMOTES="$GIT_REMOTES$repo=$REMOTE "
-        fi
+    URL_VAR="${repo}_url"
+    URL=$(eval echo "\$""$URL_VAR")
+    if [ -n "$URL" ]; then
+        GIT_REMOTES="$GIT_REMOTES$repo=$URL "
     fi
 done
 
-if [ -z "$GIT_REMOTES" ]; then
-    echo "Error: No repositories found in $REPOS_DIR"
-    echo "Expected repos: $REPOS"
-    exit 1
+[ -z "$GIT_REMOTES" ] && { echo "No git URLs configured for project: $PROJECT"; exit 1; }
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+CONTAINER_NAME="task-${TASK_NAME}-${TIMESTAMP}"
+BRANCH_NAME="task/${TASK_NAME}-${TIMESTAMP}"
+LOG_FILE="$HOME_DIR/tasks/logs/${TASK_NAME}.log"
+
+echo "=== Task Runner ===" | tee -a "$LOG_FILE"
+echo "Project: $PROJECT | Task: $TASK_NAME | Repos: $REPOS" | tee -a "$LOG_FILE"
+echo "Git remotes: $GIT_REMOTES" | tee -a "$LOG_FILE"
+echo "Log file: $LOG_FILE" | tee -a "$LOG_FILE"
+
+GH_TOKEN=$(cat $HOME_DIR/.gh_token 2>/dev/null || echo '')
+MODAL_MOUNT_ARGS=""
+MODAL_ENV_ARGS=""
+MODEL_ENV_ARGS=""
+
+if [ -f "$HOME_DIR/.modal.toml" ]; then
+    MODAL_MOUNT_ARGS="-v $HOME_DIR/.modal.toml:/root/.modal.toml:ro"
 fi
 
-echo "=== Task Runner ==="
-echo "Project: $PROJECT"
-echo "Task: $TASK_NAME"
-echo "Description: $DESCRIPTION"
-echo "Repos: $REPOS"
-echo "Container: $CONTAINER_NAME"
-echo "Branch: $BRANCH_NAME"
-echo "Notify: $NOTIFY_USER"
-echo ""
+if [ -n "${MODAL_TOKEN_ID:-}" ]; then
+    MODAL_ENV_ARGS="$MODAL_ENV_ARGS -e MODAL_TOKEN_ID=$MODAL_TOKEN_ID"
+fi
 
-# Create temporary runner script
-RUNNER_SCRIPT="/tmp/task-runner-${TASK_NAME}-${TIMESTAMP}.sh"
+if [ -n "${MODAL_TOKEN_SECRET:-}" ]; then
+    MODAL_ENV_ARGS="$MODAL_ENV_ARGS -e MODAL_TOKEN_SECRET=$MODAL_TOKEN_SECRET"
+fi
 
-cat > "$RUNNER_SCRIPT" << EOF
-#!/bin/bash
-set -e
+if [ -n "${MODAL_PROFILE:-}" ]; then
+    MODAL_ENV_ARGS="$MODAL_ENV_ARGS -e MODAL_PROFILE=$MODAL_PROFILE"
+fi
 
-# All values are injected at runtime - nothing hardcoded
-export GIT_REMOTES="$GIT_REMOTES"
-export REPOS="$REPOS"
-export PRIMARY_REPO="$PRIMARY_REPO"
-export BRANCH_NAME="$BRANCH_NAME"
-export TASK_NAME="$TASK_NAME"
-export NOTIFY_USER="$NOTIFY_USER"
-export DESCRIPTION="$DESCRIPTION"
-export CONTAINER_NAME="$CONTAINER_NAME"
-export GH_TOKEN="\$(cat ~/.gh_token 2>/dev/null || echo '')"
+if [ -n "${OPENCLAW_VLLM_BASE_URL:-}" ]; then
+    MODEL_ENV_ARGS="$MODEL_ENV_ARGS -e OPENCLAW_VLLM_BASE_URL=$OPENCLAW_VLLM_BASE_URL"
+fi
 
-echo "Starting container: \$CONTAINER_NAME"
+if [ -n "${OPENCLAW_VLLM_MODEL_ID:-}" ]; then
+    MODEL_ENV_ARGS="$MODEL_ENV_ARGS -e OPENCLAW_VLLM_MODEL_ID=$OPENCLAW_VLLM_MODEL_ID"
+fi
 
-# Start isolated container with SSH key mounted writable
-CONTAINER_ID=\$(docker run -d \\
-    --name \$CONTAINER_NAME \\
-    -v ~/.ssh:/root/.ssh \\
-    -e GIT_REMOTES="\$GIT_REMOTES" \\
-    -e REPOS="\$REPOS" \\
-    -e PRIMARY_REPO="\$PRIMARY_REPO" \\
-    -e BRANCH_NAME="\$BRANCH_NAME" \\
-    -e TASK_NAME="\$TASK_NAME" \\
-    -e NOTIFY_USER="\$NOTIFY_USER" \\
-    -e DESCRIPTION="\$DESCRIPTION" \\
-    -e GH_TOKEN="\$GH_TOKEN" \\
-    -e GIT_AUTHOR_EMAIL='dominiquemb@users.noreply.github.com' \\
-    -e GIT_COMMITTER_EMAIL='dominiquemb@users.noreply.github.com' \\
-    -e GIT_AUTHOR_NAME='dominiquemb' \\
-    -e GIT_COMMITTER_NAME='dominiquemb' \\
-    task-runner-base:latest \\
-    bash -c "chmod 600 /root/.ssh/* 2>/dev/null || true; Xvfb :99 -screen 0 1920x1080x24 & export DISPLAY=:99; fluxbox & sleep 2; tail -f /dev/null")
+if [ -n "${OPENCLAW_VLLM_API_KEY:-}" ]; then
+    MODEL_ENV_ARGS="$MODEL_ENV_ARGS -e OPENCLAW_VLLM_API_KEY=$OPENCLAW_VLLM_API_KEY"
+fi
+
+if [ -n "${SUBAGENT_MODEL:-}" ]; then
+    MODEL_ENV_ARGS="$MODEL_ENV_ARGS -e SUBAGENT_MODEL=$SUBAGENT_MODEL"
+fi
+
+if [ -n "${SUBAGENT_FALLBACK_MODELS:-}" ]; then
+    MODEL_ENV_ARGS="$MODEL_ENV_ARGS -e SUBAGENT_FALLBACK_MODELS=$SUBAGENT_FALLBACK_MODELS"
+fi
+
+# Start container
+echo "Starting container: $CONTAINER_NAME" | tee -a "$LOG_FILE"
+if [ "$RUNNING_AS_ROOT" = "true" ]; then
+    sudo docker run -d --name $CONTAINER_NAME -v $HOME_DIR/.ssh:/root/.ssh \
+      $MODAL_MOUNT_ARGS $MODAL_ENV_ARGS $MODEL_ENV_ARGS \
+      -e GIT_REMOTES="$GIT_REMOTES" -e REPOS="$REPOS" -e PRIMARY_REPO="$PRIMARY_REPO" \
+      -e BRANCH_NAME="$BRANCH_NAME" -e TASK_NAME="$TASK_NAME" -e NOTIFY_USER="$NOTIFY_USER" \
+      -e DESCRIPTION="$DESCRIPTION" -e GH_TOKEN="$GH_TOKEN" \
+      -e GIT_AUTHOR_EMAIL='dominiquemb@users.noreply.github.com' \
+      task-runner-base:latest bash -c "Xvfb :99 -screen 0 1920x1080x24 & fluxbox & sleep 2; tail -f /dev/null" 2>&1 | tee -a "$LOG_FILE"
+else
+    docker run -d --name $CONTAINER_NAME -v ~/.ssh:/root/.ssh \
+      $MODAL_MOUNT_ARGS $MODAL_ENV_ARGS $MODEL_ENV_ARGS \
+      -e GIT_REMOTES="$GIT_REMOTES" -e REPOS="$REPOS" -e PRIMARY_REPO="$PRIMARY_REPO" \
+      -e BRANCH_NAME="$BRANCH_NAME" -e TASK_NAME="$TASK_NAME" -e NOTIFY_USER="$NOTIFY_USER" \
+      -e DESCRIPTION="$DESCRIPTION" -e GH_TOKEN="$GH_TOKEN" \
+      -e GIT_AUTHOR_EMAIL='dominiquemb@users.noreply.github.com' \
+      task-runner-base:latest bash -c "Xvfb :99 -screen 0 1920x1080x24 & fluxbox & sleep 2; tail -f /dev/null" 2>&1 | tee -a "$LOG_FILE"
+fi
 
 sleep 3
 
-# Copy task script into container
-docker cp "$SCRIPT_PATH" \$CONTAINER_NAME:/workspace/task.sh
+# Copy task script
+echo "Copying task script to container" | tee -a "$LOG_FILE"
+if [ "$RUNNING_AS_ROOT" = "true" ]; then
+    sudo docker cp "$SCRIPT_PATH" $CONTAINER_NAME:/workspace/task.sh 2>&1 | tee -a "$LOG_FILE"
+else
+    docker cp "$SCRIPT_PATH" $CONTAINER_NAME:/workspace/task.sh 2>&1 | tee -a "$LOG_FILE"
+fi
 
-# Execute task inside container
-docker exec -w /workspace \$CONTAINER_NAME bash -c '
-    set -e
+# Copy canonical container-side spawn-subagent.sh
+echo "Copying canonical spawn-subagent.sh to container" | tee -a "$LOG_FILE"
+if [ "$RUNNING_AS_ROOT" = "true" ]; then
+    sudo docker cp $HOME_DIR/docker-dev-container/spawn-subagent.sh $CONTAINER_NAME:/workspace/spawn-subagent.sh 2>&1 | tee -a "$LOG_FILE"
+    sudo docker exec $CONTAINER_NAME chmod +x /workspace/spawn-subagent.sh 2>&1 | tee -a "$LOG_FILE"
+else
+    docker cp $HOME_DIR/docker-dev-container/spawn-subagent.sh $CONTAINER_NAME:/workspace/spawn-subagent.sh 2>&1 | tee -a "$LOG_FILE"
+    docker exec $CONTAINER_NAME chmod +x /workspace/spawn-subagent.sh 2>&1 | tee -a "$LOG_FILE"
+fi
+
+# Copy identity files
+echo "Copying identity files to container" | tee -a "$LOG_FILE"
+if [ "$RUNNING_AS_ROOT" = "true" ]; then
+    sudo docker cp $HOME_DIR/docker-dev-container/SOUL.md $CONTAINER_NAME:/workspace/SOUL.md 2>&1 | tee -a "$LOG_FILE"
+    sudo docker cp $HOME_DIR/docker-dev-container/AGENTS.md $CONTAINER_NAME:/workspace/AGENTS.md 2>&1 | tee -a "$LOG_FILE"
+    sudo docker cp $HOME_DIR/docker-dev-container/USER.md $CONTAINER_NAME:/workspace/USER.md 2>&1 | tee -a "$LOG_FILE"
+else
+    docker cp $HOME_DIR/docker-dev-container/SOUL.md $CONTAINER_NAME:/workspace/SOUL.md 2>&1 | tee -a "$LOG_FILE"
+    docker cp $HOME_DIR/docker-dev-container/AGENTS.md $CONTAINER_NAME:/workspace/AGENTS.md 2>&1 | tee -a "$LOG_FILE"
+    docker cp $HOME_DIR/docker-dev-container/USER.md $CONTAINER_NAME:/workspace/USER.md 2>&1 | tee -a "$LOG_FILE"
+fi
+
+# Execute in container
+echo "Executing task in container" | tee -a "$LOG_FILE"
+if [ "$RUNNING_AS_ROOT" = "true" ]; then
+    sudo docker exec $CONTAINER_NAME bash -c '
+  set -e
+  mkdir -p /tmp/.ssh
+  cp /root/.ssh/github_key /tmp/.ssh/id_rsa 2>/dev/null || { echo "ERROR: SSH key not found"; exit 1; }
+  chmod 600 /tmp/.ssh/* 2>/dev/null || true
+  rm -f /root/.ssh/config 2>/dev/null || true
+  export GIT_SSH_COMMAND="ssh -i /tmp/.ssh/id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  
+  echo "=== Task Execution Started ==="
+  for info in $GIT_REMOTES; do r=${info%%=*}; git clone ${info#*=} $r 2>&1; done
+  cd $PRIMARY_REPO
+  [ -f package.json ] && npm install 2>/dev/null
+  bash /workspace/task.sh 2>&1
+  rm -f SOUL.md USER.md IDENTITY.md TOOLS.md HEARTBEAT.md BOOTSTRAP.md
+  rm -f .openclaw/workspace-state.json
+  rmdir .openclaw 2>/dev/null || true
+  changed_files="$(git status --porcelain | awk '"'"'{print $2}'"'"')"
+  meaningful_changes="$(printf "%s\n" "$changed_files" | grep -E '"'"'^(src/|app/|components/|pages/|public/|styles/|assets/|lib/|utils/|hooks/|store/|theme/|package\.json$|package-lock\.json$|yarn\.lock$|pnpm-lock\.yaml$|vite\.config|tailwind\.config|tsconfig|playwright\.config|scripts/|tests?/|__tests__/|cypress/|index\.)'"'"' || true)"
+  if [ -n "$changed_files" ] && [ -z "$meaningful_changes" ]; then
+    echo "ERROR: metadata-only or non-application changes detected; refusing to commit"
+    printf "%s\n" "$changed_files"
+    exit 1
+  fi
+  [ -n "$(git status --porcelain)" ] && {
+    git config user.email "dominiquemb@users.noreply.github.com" && git config user.name "dominiquemb"
+    git checkout -b $BRANCH_NAME && git add -A && git commit -m "feat: $DESCRIPTION" && git push -u origin $BRANCH_NAME 2>&1
+    PR=$(gh pr create --title "feat: $DESCRIPTION" --body "Task: $TASK_NAME" --base main --head $BRANCH_NAME --assignee $NOTIFY_USER 2>&1)
+    gh pr comment $PR --body "@$NOTIFY_USER Ready for review!" 2>/dev/null || true
+    echo "PR created: $PR"
+  }
+' 2>&1 | tee -a "$LOG_FILE"
     
-    # Copy SSH files to writable location and fix permissions
-    mkdir -p /tmp/.ssh
-    cp /root/.ssh/github_key /tmp/.ssh/id_rsa 2>/dev/null || cp /root/.ssh/id_rsa /tmp/.ssh/id_rsa 2>/dev/null || true
-    cp /root/.ssh/known_hosts /tmp/.ssh/known_hosts 2>/dev/null || true
-    chmod 600 /tmp/.ssh/* 2>/dev/null || true
-    rm -f /root/.ssh/config 2>/dev/null || true
-    export GIT_SSH_COMMAND="ssh -i /tmp/.ssh/id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/.ssh/known_hosts"
+    sudo docker stop $CONTAINER_NAME 2>&1 | tee -a "$LOG_FILE"
+    sudo docker rm $CONTAINER_NAME 2>&1 | tee -a "$LOG_FILE"
+else
+    docker exec $CONTAINER_NAME bash -c '
+  set -e
+  mkdir -p /tmp/.ssh
+  cp /root/.ssh/github_key /tmp/.ssh/id_rsa 2>/dev/null || { echo "ERROR: SSH key not found"; exit 1; }
+  chmod 600 /tmp/.ssh/* 2>/dev/null || true
+  rm -f /root/.ssh/config 2>/dev/null || true
+  export GIT_SSH_COMMAND="ssh -i /tmp/.ssh/id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  
+  echo "=== Task Execution Started ==="
+  for info in $GIT_REMOTES; do r=${info%%=*}; git clone ${info#*=} $r 2>&1; done
+  cd $PRIMARY_REPO
+  [ -f package.json ] && npm install 2>/dev/null
+  bash /workspace/task.sh 2>&1
+  rm -f SOUL.md USER.md IDENTITY.md TOOLS.md HEARTBEAT.md BOOTSTRAP.md
+  rm -f .openclaw/workspace-state.json
+  rmdir .openclaw 2>/dev/null || true
+  changed_files="$(git status --porcelain | awk '"'"'{print $2}'"'"')"
+  meaningful_changes="$(printf "%s\n" "$changed_files" | grep -E '"'"'^(src/|app/|components/|pages/|public/|styles/|assets/|lib/|utils/|hooks/|store/|theme/|package\.json$|package-lock\.json$|yarn\.lock$|pnpm-lock\.yaml$|vite\.config|tailwind\.config|tsconfig|playwright\.config|scripts/|tests?/|__tests__/|cypress/|index\.)'"'"' || true)"
+  if [ -n "$changed_files" ] && [ -z "$meaningful_changes" ]; then
+    echo "ERROR: metadata-only or non-application changes detected; refusing to commit"
+    printf "%s\n" "$changed_files"
+    exit 1
+  fi
+  [ -n "$(git status --porcelain)" ] && {
+    git config user.email "dominiquemb@users.noreply.github.com" && git config user.name "dominiquemb"
+    git checkout -b $BRANCH_NAME && git add -A && git commit -m "feat: $DESCRIPTION" && git push -u origin $BRANCH_NAME 2>&1
+    PR=$(gh pr create --title "feat: $DESCRIPTION" --body "Task: $TASK_NAME" --base main --head $BRANCH_NAME --assignee $NOTIFY_USER 2>&1)
+    gh pr comment $PR --body "@$NOTIFY_USER Ready for review!" 2>/dev/null || true
+    echo "PR created: $PR"
+  }
+' 2>&1 | tee -a "$LOG_FILE"
     
-    echo "=== Task: \$TASK_NAME ==="
-    echo "Started at: \$(date)"
+    docker stop $CONTAINER_NAME 2>&1 | tee -a "$LOG_FILE"
+    docker rm $CONTAINER_NAME 2>&1 | tee -a "$LOG_FILE"
+fi
 
-    # Clone all repositories (fresh, isolated)
-    for repo_info in \$GIT_REMOTES; do
-        repo=\${repo_info%%=*}
-        remote=\${repo_info#*=}
-        echo "Cloning \$repo..."
-        git clone \$remote \$repo
-    done
-    
-    cd \$PRIMARY_REPO
-    
-    # Install dependencies
-    [ -f package.json ] && npm install 2>/dev/null || true
-    
-    # Run task script
-    bash /workspace/task.sh
-    
-    # Create PR if there are changes
-    if [ -n "\$(git status --porcelain)" ]; then
-        git checkout -b \$BRANCH_NAME
-        git add -A
-        git commit -m "feat: \$DESCRIPTION"
-        git push -u origin \$BRANCH_NAME
-        
-        PR_URL=\$(gh pr create \\
-            --title "feat: \$DESCRIPTION" \\
-            --body "Task: \$TASK_NAME\\n\\nProject: $PROJECT\\nContainer: \$CONTAINER_NAME" \\
-            --base main \\
-            --head \$BRANCH_NAME \\
-            --assignee \$NOTIFY_USER)
-        
-        gh pr comment \$PR_URL --body "@\$NOTIFY_USER Ready for review!" 2>/dev/null || true
-        echo "PR created: \$PR_URL"
-    fi
-'
-
-# Cleanup
-docker stop \$CONTAINER_NAME
-docker rm \$CONTAINER_NAME
-
-echo "Task completed"
-EOF
-
-chmod +x "$RUNNER_SCRIPT"
-
-# Execute in background
-nohup bash "$RUNNER_SCRIPT" &
-PID=$!
-
-echo ""
-echo "Task started (PID: $PID)"
-echo "Runner script: $RUNNER_SCRIPT"
-echo ""
-echo "To check status, monitor Docker:"
-echo "  docker ps | grep $CONTAINER_NAME"
-echo "  docker logs $CONTAINER_NAME"
+echo "Task completed" | tee -a "$LOG_FILE"
+echo "Log file: $LOG_FILE" | tee -a "$LOG_FILE"

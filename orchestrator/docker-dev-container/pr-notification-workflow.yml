@@ -1,0 +1,61 @@
+name: PR Notification
+
+on:
+  pull_request:
+    types: [opened]
+    branches:
+      - main
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    # Only run for task branch PRs
+    if: startsWith(github.head_ref, vars.TASK_BRANCH_PREFIX || 'task/')
+    
+    steps:
+      - name: Post notification comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const notifyUser = process.env.NOTIFY_USER || 'dominiquemb';
+            const taskBranchPrefix = process.env.TASK_BRANCH_PREFIX || 'task/';
+            
+            const pr = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: issue_number
+            });
+            
+            // Extract task name from branch
+            const branchName = pr.data.head.ref;
+            const taskMatch = branchName.match(new RegExp(`${taskBranchPrefix}(.+?)-\\d{8}-\\d{6}`));
+            const taskName = taskMatch ? taskMatch[1] : 'unknown';
+            
+            // Post notification comment
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: `## 🤖 Automated PR Notification
+
+**Task:** \`${taskName}\`
+
+@${notifyUser} This PR was automatically created by the background task runner and is ready for your review.
+
+### What's Included:
+- ✅ Code changes
+- ✅ Screenshots (see \`e2e/screenshots/\`)
+- ✅ Screen recording (MP4)
+- ✅ Execution summary
+
+---
+*This comment was posted automatically to ensure you receive a notification.*`
+            });
+            
+            console.log(`Posted notification comment on PR #${issue_number} for user ${notifyUser}`);
+        env:
+          NOTIFY_USER: ${{ vars.NOTIFY_USER }}
+          TASK_BRANCH_PREFIX: ${{ vars.TASK_BRANCH_PREFIX }}

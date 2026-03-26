@@ -1,0 +1,25 @@
+# Task Runner Configuration
+# Copy to .task-config.sh and customize
+
+# GitHub username to notify
+NOTIFY_USER="${NOTIFY_USER:-dominiquemb}"
+
+# Email for notifications (optional)
+NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
+
+# SMTP settings for email notifications (optional)
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-587}"
+SMTP_USER="${SMTP_USER:-}"
+SMTP_PASS="${SMTP_PASS:-}"
+FROM_EMAIL="${FROM_EMAIL:-}"
+
+# Repository configuration (auto-detected if not set)
+DEFAULT_REPO="${DEFAULT_REPO:-healthtrac360-web}"
+
+# Task branch prefix
+TASK_BRANCH_PREFIX="${TASK_BRANCH_PREFIX:-task/}"
+
+# Docker configuration
+DOCKER_DIR="${DOCKER_DIR:-~/docker-dev-container}"
+REPOS_DIR="${REPOS_DIR:-~/repos}"
