@@ -124,6 +124,38 @@ echo "Need to implement this"
 
 ---
 
+## Monitoring Task Progress
+
+**Logs are stored in:** `~/tasks/logs/<task-name>.log`
+
+**To check progress:**
+```bash
+# View full log
+cat ~/tasks/logs/<task-name>.log
+
+# Follow log in real-time
+tail -f ~/tasks/logs/<task-name>.log
+
+# Check last 50 lines
+tail -50 ~/tasks/logs/<task-name>.log
+```
+
+**Example:**
+```bash
+# After running a task, check logs
+cat ~/tasks/logs/stop-time-purple-indicator.log
+```
+
+**Log file contains:**
+- Task runner startup info
+- Container start/stop events
+- Git clone progress
+- npm install output
+- Sub-agent execution logs
+- PR creation confirmation
+
+---
+
 ## Troubleshooting
 
 | Problem | Solution |
