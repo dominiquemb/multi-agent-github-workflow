@@ -1,84 +1,107 @@
 # Task Runner - AI Agent Instructions
 
-## ⚡ Quick Start
+## ⚡ CRITICAL: READ THIS FIRST
 
-**For AI Agents:**
+**You are an AI agent. You CANNOT spawn sub-agents directly.**
 
-1. **Write a task script** that spawns a sub-agent
-2. **Run the task runner** with that script
+**The `spawn-subagent.sh` script invokes OpenClaw CLI, which IS the sub-agent.**
 
-```bash
-~/task-run.sh --project healthtrac --task <task-name> --desc "<description>" --script ~/tasks/scripts/<script-name>.sh
-```
+**Your job:** Write task scripts that call `~/spawn-subagent.sh` with a clear task description.
+
+**The sub-agent's job:** Explore, implement, and complete the task.
 
 ---
 
-## ⚠️ CRITICAL: How Sub-Agent Spawning Works
+## ✅ CORRECT: Spawn Sub-Agent
 
-**Your task script should SPAWN a sub-agent that implements the solution autonomously.**
+```bash
+#!/bin/bash
+# This script spawns a sub-agent that does the actual work
+~/spawn-subagent.sh "Add purple border around manually edited stop times. When a user manually edits a stop time, show a purple square indicator around it."
+```
 
-The sub-agent (OpenClaw) will:
+**That's it.** The sub-agent will:
 1. Explore the codebase
-2. Figure out what files to change
-3. Make the changes
+2. Find the relevant files
+3. Implement the solution
 4. Exit when complete
 
-### ✅ CORRECT - Spawn sub-agent
-```bash
-#!/bin/bash
-# Spawn autonomous sub-agent to implement the task
-~/spawn-subagent.sh "Add purple border around manually edited stop times"
-```
+---
 
-### ❌ WRONG - Don't implement directly
+## ❌ WRONG: Don't Implement Yourself
+
 ```bash
 #!/bin/bash
+# DON'T do this - you're not the implementer
 cd $PRIMARY_REPO
-sed -i 's/old/new/g' src/file.tsx  # Don't do this yourself
+sed -i 's/old/new/g' src/file.tsx
 ```
-
-### ❌ WRONG - Don't use other AI CLIs
-```bash
-#!/bin/bash
-qwen "Add purple border"  # Not the right tool
-claude "Add purple border"  # Not the right tool
-```
-
-**Use OpenClaw via `~/spawn-subagent.sh`** - it's designed for autonomous task execution.
 
 ---
 
-## How It Actually Works
+## ❌ WRONG: Don't Explore Yourself
+
+```bash
+#!/bin/bash
+# DON'T do this - the sub-agent explores
+find src -name "*StopTime*"
+grep -r "stop.time" src/
+```
+
+---
+
+## ❌ WRONG: Don't Write TODOs
+
+```bash
+#!/bin/bash
+# DON'T do this - no TODOs
+# TODO: Find the stop time component
+# TODO: Add purple border
+echo "Need to implement this"
+```
+
+---
+
+## How It Works
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  1. You write task script (spawns sub-agent)           │
-│  2. task-run.sh starts Docker container                │
-│  3. Your script calls ~/spawn-subagent.sh              │
-│  4. OpenClaw sub-agent explores & implements           │
-│  5. Sub-agent exits when complete                      │
-│  6. Runner detects changes, commits, creates PR        │
-│  7. Container is cleaned up                            │
+│  YOU (AI Agent)                                        │
+│  Write a script that calls spawn-subagent.sh           │
 └─────────────────────────────────────────────────────────┘
-
-Your job: Tell the sub-agent WHAT to do.
-Sub-agent's job: Figure out HOW to do it.
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│  spawn-subagent.sh                                      │
+│  Launches OpenClaw CLI (the sub-agent)                 │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│  SUB-AGENT (OpenClaw)                                  │
+│  1. Explores codebase                                  │
+│  2. Finds relevant files                               │
+│  3. Implements solution                                │
+│  4. Exits when complete                                │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│  task-run.sh                                            │
+│  Detects changes, commits, creates PR                  │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Example: Complete Workflow
 
-**User request:** "Add purple border around manually edited stop times"
+**Task:** "Add purple border around manually edited stop times"
 
-**AI Agent creates script** (`~/tasks/scripts/purple-border.sh`):
+**Your script** (`~/tasks/scripts/purple-border.sh`):
 ```bash
 #!/bin/bash
-# Spawn sub-agent to implement the feature
-~/spawn-subagent.sh "Add purple border around manually edited stop times. When a stop time is manually edited, show a purple square indicator around it."
+~/spawn-subagent.sh "Add purple border around manually edited stop times. When a user manually edits a stop time, show a purple square indicator around it."
 ```
 
-**AI Agent runs task:**
+**Run the task:**
 ```bash
 ~/task-run.sh --project healthtrac \
   --task purple-border \
@@ -86,17 +109,18 @@ Sub-agent's job: Figure out HOW to do it.
   --script ~/tasks/scripts/purple-border.sh
 ```
 
-**Result:** PR created with the implementation
+**Result:** Sub-agent implements everything, PR is created automatically.
 
 ---
 
-## Key Points For AI Agents
+## Key Rules
 
-1. **You are the orchestrator** - Write scripts that spawn sub-agents
-2. **Sub-agents implement** - OpenClaw does the actual coding work
-3. **Be specific in task descriptions** - Include context and requirements
-4. **Non-blocking** - spawn-subagent.sh returns immediately
-5. **Don't ask the user** - Make reasonable decisions or pass to sub-agent
+1. **You write scripts that spawn sub-agents** - You don't implement
+2. **Sub-agents explore and implement** - They do the actual work
+3. **Be specific in task descriptions** - Include requirements and context
+4. **One task per script** - Keep it focused
+5. **Don't explore yourself** - The sub-agent explores
+6. **Don't implement yourself** - The sub-agent implements
 
 ---
 
@@ -104,10 +128,10 @@ Sub-agent's job: Figure out HOW to do it.
 
 | Problem | Solution |
 |---------|----------|
-| Sub-agent makes no changes | Task description too vague - be more specific |
-| Sub-agent fails | Check Docker logs: `docker logs $CONTAINER_NAME` |
-| Wrong files changed | Add file paths or constraints to task description |
-| PR not created | Sub-agent didn't commit - check if it completed successfully |
+| "I don't know which files to change" | That's the sub-agent's job - just describe the task |
+| "Should I explore first?" | No - the sub-agent explores |
+| "Should I write the code?" | No - the sub-agent writes the code |
+| "What do I put in the script?" | Just call `~/spawn-subagent.sh "task description"` |
 
 ---
 
