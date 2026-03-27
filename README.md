@@ -49,7 +49,7 @@ Each project family groups related repositories that should be cloned together. 
 From this repo:
 
 ```bash
-cd /home/ubuntu/dev-workflow/orchestrator
+cd /home/ubuntu/multi-agent-github-workflow/orchestrator
 docker build -f Dockerfile.base -t task-runner-base:latest .
 ```
 
@@ -122,7 +122,7 @@ export SUBAGENT_MODEL="codex"
 The current runner entrypoint is:
 
 ```bash
-/home/ubuntu/dev-workflow/orchestrator/task-run.sh \
+/home/ubuntu/multi-agent-github-workflow/orchestrator/task-run.sh \
   --project healthtrac \
   --task stop-time-purple-indicator \
   --desc "Implement purple border fix" \

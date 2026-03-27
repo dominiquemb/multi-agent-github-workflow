@@ -13,8 +13,8 @@ Replicate the background task system with screen recording on any server with Do
 
 ```bash
 # 1. Clone this repository
-git clone https://github.com/dominiquemb/dev-workflow.git
-cd dev-workflow/docker-setup
+git clone https://github.com/dominiquemb/multi-agent-github-workflow.git
+cd multi-agent-github-workflow/docker-setup
 
 # 2. Copy scripts to home directory
 cp *.sh ~/

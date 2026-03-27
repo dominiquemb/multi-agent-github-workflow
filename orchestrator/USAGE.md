@@ -127,5 +127,5 @@ Run `gh auth login` or ensure `~/.gh_token` exists
 
 ## Additional Resources
 
-- Main orchestrator docs: https://github.com/dominiquemb/dev-workflow
+- Main orchestrator docs: https://github.com/dominiquemb/multi-agent-github-workflow
 - Project configs: https://github.com/dominiquemb/task-runner-config
