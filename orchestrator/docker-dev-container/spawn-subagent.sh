@@ -57,7 +57,8 @@ Rules:
 12. If you make UI-affecting changes, you must run a relevant screenshot-producing verification path before finishing
 13. For UI work, prefer Playwright or Cypress end-to-end coverage over only unit tests when that path exists
 14. If UI changes were made and no screenshots or videos were generated, treat the task as incomplete and exit non-zero
-15. When complete, exit with code 0
+15. If the repository includes a database dump, seed file, or snapshot needed for local app behavior, install or start the required database service, restore the dump, and run the relevant migrations before verification
+16. When complete, exit with code 0
 
 Work in the directory: $(pwd)"
 
