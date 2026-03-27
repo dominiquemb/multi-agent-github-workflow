@@ -36,6 +36,9 @@ RUN npm install -g playwright || true
 RUN npx playwright install-deps chromium
 RUN npx playwright install chromium
 
+# Install agent CLIs
+RUN npm install -g @openai/codex @qwen-code/qwen-code || true
+
 # Set up display for screen recording
 ENV DISPLAY=:99
 

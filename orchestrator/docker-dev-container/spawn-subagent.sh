@@ -54,7 +54,10 @@ Rules:
 9. If information is missing or ambiguous, make the most reasonable assumption and continue without requesting user input
 10. If multiple plausible implementations exist, choose the least invasive option that satisfies the task
 11. If partially blocked, take the best available path and continue rather than stopping for clarification
-12. When complete, exit with code 0
+12. If you make UI-affecting changes, you must run a relevant screenshot-producing verification path before finishing
+13. For UI work, prefer Playwright or Cypress end-to-end coverage over only unit tests when that path exists
+14. If UI changes were made and no screenshots or videos were generated, treat the task as incomplete and exit non-zero
+15. When complete, exit with code 0
 
 Work in the directory: $(pwd)"
 
@@ -126,6 +129,31 @@ run_subagent() {
 
     for selected_model in "${models_to_try[@]}"; do
         echo "[$(date -Is)] Starting sub-agent with model: ${selected_model:-default}" >> "$log_file"
+
+        if [ "$selected_model" = "codex" ] || [[ "$selected_model" == codex/* ]]; then
+            codex_cmd=(
+                codex exec
+                --cd "$(pwd)"
+                --skip-git-repo-check
+                --json
+                --dangerously-bypass-approvals-and-sandbox
+            )
+
+            if [ "$selected_model" != "codex" ]; then
+                codex_cmd+=(--model "${selected_model#codex/}")
+            fi
+
+            "${codex_cmd[@]}" "$MISSION_BRIEF" >> "$log_file" 2>&1 </dev/null
+            exit_code=$?
+
+            if [ "$exit_code" -eq 0 ]; then
+                echo "[$(date -Is)] Codex sub-agent completed with model: ${selected_model}" >> "$log_file"
+                return 0
+            fi
+
+            echo "[$(date -Is)] Codex sub-agent failed with model: ${selected_model}" >> "$log_file"
+            return "$exit_code"
+        fi
 
         configure_modal_vllm_provider >> "$log_file" 2>&1 || return $?
         ensure_agent_workspace "$selected_model" >> "$log_file" 2>&1 || return $?
