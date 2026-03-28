@@ -232,8 +232,15 @@ Use the host-side batch launcher when you want to start multiple tasks at once a
 Batch file format:
 
 ```text
-task-name|Plain English description|/absolute/path/to/task-script.sh
+task-name|task-type|Plain English description|/absolute/path/to/task-script.sh
 ```
+
+Supported task types:
+
+- `ui`
+- `api`
+- `full-stack`
+- `general`
 
 The launcher writes batch metadata under:
 
@@ -304,6 +311,30 @@ Each task now writes explicit states such as:
 - `failed_task`
 
 The failure reason file captures the most recent host-side or task-side reason when available.
+
+## Task Types
+
+The runner can now pass a task type through to the sub-agent:
+
+```bash
+/home/ubuntu/multi-agent-github-workflow/orchestrator/task-run.sh \
+  --project healthtrac \
+  --task track-order-results-not-loading \
+  --type full-stack \
+  --desc "Fix Track an Order page so results load correctly" \
+  --script /home/ubuntu/tasks/scripts/track-order-results-not-loading.sh
+```
+
+Type behavior:
+
+- `ui`
+  - emphasizes screenshot-producing verification
+- `api`
+  - requires backend/API inspection, DB setup when needed, and explicit API verification
+- `full-stack`
+  - requires cross-repo inspection and verification across UI + backend layers
+- `general`
+  - default if no type is specified
 
 ## Cleanup
 

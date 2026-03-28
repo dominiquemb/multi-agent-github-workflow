@@ -86,19 +86,20 @@ fi
 [ -f $HOME_DIR/.task-project-config.sh ] && source $HOME_DIR/.task-project-config.sh
 [ -f $HOME_DIR/.task-model-config.sh ] && source $HOME_DIR/.task-model-config.sh
 
-PROJECT="" TASK_NAME="" DESCRIPTION="" SCRIPT_PATH="" NOTIFY_USER="dominiquemb"
+PROJECT="" TASK_NAME="" DESCRIPTION="" SCRIPT_PATH="" TASK_TYPE="general" NOTIFY_USER="dominiquemb"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --project|-p) PROJECT="$2"; shift 2 ;;
         --task|-t) TASK_NAME="$2"; shift 2 ;;
         --desc|-d) DESCRIPTION="$2"; shift 2 ;;
         --script|-s) SCRIPT_PATH="$2"; shift 2 ;;
+        --type) TASK_TYPE="$2"; shift 2 ;;
         --user|-u) NOTIFY_USER="$2"; shift 2 ;;
         *) exit 1 ;;
     esac
 done
 
-[ -z "$PROJECT" ] || [ -z "$TASK_NAME" ] || [ -z "$SCRIPT_PATH" ] && { echo "Usage: --project --task --desc --script"; exit 1; }
+[ -z "$PROJECT" ] || [ -z "$TASK_NAME" ] || [ -z "$SCRIPT_PATH" ] && { echo "Usage: --project --task --desc --script [--type general|ui|api|full-stack]"; exit 1; }
 
 # Get project config
 REPOS_VAR="${PROJECT}_repos"
@@ -146,6 +147,7 @@ set_task_status() {
         echo "artifacts_dir=$ARTIFACTS_DIR"
         echo "batch_id=$BATCH_ID"
         echo "batch_dir=$BATCH_DIR"
+        echo "task_type=$TASK_TYPE"
         echo "detail=$detail"
     } > "$STATUS_FILE"
 
@@ -157,7 +159,7 @@ set_task_status() {
 }
 
 echo "=== Task Runner ===" | tee -a "$LOG_FILE"
-log "Project: $PROJECT | Task: $TASK_NAME | Repos: $REPOS"
+log "Project: $PROJECT | Task: $TASK_NAME | Type: $TASK_TYPE | Repos: $REPOS"
 log "Git remotes: $GIT_REMOTES"
 log "Log file: $LOG_FILE"
 log "Artifacts dir: $ARTIFACTS_DIR"
@@ -219,7 +221,7 @@ if [ "$RUNNING_AS_ROOT" = "true" ]; then
       sudo docker run -d --name "$CONTAINER_NAME" -v "$HOME_DIR/.ssh:/root/.ssh" \
       $MODAL_MOUNT_ARGS $CODEX_MOUNT_ARGS $MODAL_ENV_ARGS $MODEL_ENV_ARGS \
       -e GIT_REMOTES="$GIT_REMOTES" -e REPOS="$REPOS" -e PRIMARY_REPO="$PRIMARY_REPO" \
-      -e BRANCH_NAME="$BRANCH_NAME" -e TASK_NAME="$TASK_NAME" -e NOTIFY_USER="$NOTIFY_USER" \
+      -e BRANCH_NAME="$BRANCH_NAME" -e TASK_NAME="$TASK_NAME" -e TASK_TYPE="$TASK_TYPE" -e NOTIFY_USER="$NOTIFY_USER" \
       -e DESCRIPTION="$DESCRIPTION" -e GH_TOKEN="$GH_TOKEN" \
       -e GIT_AUTHOR_EMAIL='dominiquemb@users.noreply.github.com' \
       task-runner-base:latest bash -c "Xvfb :99 -screen 0 1920x1080x24 & fluxbox & sleep 2; tail -f /dev/null"
@@ -228,7 +230,7 @@ else
       docker_cmd run -d --name "$CONTAINER_NAME" -v "$HOME_DIR/.ssh:/root/.ssh" \
       $MODAL_MOUNT_ARGS $CODEX_MOUNT_ARGS $MODAL_ENV_ARGS $MODEL_ENV_ARGS \
       -e GIT_REMOTES="$GIT_REMOTES" -e REPOS="$REPOS" -e PRIMARY_REPO="$PRIMARY_REPO" \
-      -e BRANCH_NAME="$BRANCH_NAME" -e TASK_NAME="$TASK_NAME" -e NOTIFY_USER="$NOTIFY_USER" \
+      -e BRANCH_NAME="$BRANCH_NAME" -e TASK_NAME="$TASK_NAME" -e TASK_TYPE="$TASK_TYPE" -e NOTIFY_USER="$NOTIFY_USER" \
       -e DESCRIPTION="$DESCRIPTION" -e GH_TOKEN="$GH_TOKEN" \
       -e GIT_AUTHOR_EMAIL='dominiquemb@users.noreply.github.com' \
       task-runner-base:latest bash -c "Xvfb :99 -screen 0 1920x1080x24 & fluxbox & sleep 2; tail -f /dev/null"

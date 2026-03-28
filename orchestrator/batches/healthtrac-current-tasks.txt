@@ -1,8 +1,8 @@
-# task|description|script_path
-dispatch-dashboard-change-driver-autocomplete|Add autocomplete combobox for change driver selection on dispatch dashboard|/home/ubuntu/tasks/scripts/dispatch-dashboard-change-driver-autocomplete.sh
-dispatch-dashboard-unassign-driver|Add Unassign button next to Change Driver on dispatch dashboard|/home/ubuntu/tasks/scripts/dispatch-dashboard-unassign-driver.sh
-manage-teams-scroll-fix|Fix Manage Teams scrolling so the table does not handle scrolling incorrectly|/home/ubuntu/tasks/scripts/manage-teams-scroll-fix.sh
-manage-teams-delete-user|Add delete user button on Manage Teams|/home/ubuntu/tasks/scripts/manage-teams-delete-user.sh
-settings-pricing-copy-update|Update Pricing Settings copy in Settings|/home/ubuntu/tasks/scripts/settings-pricing-copy-update.sh
-track-order-results-not-loading|Fix Track an Order page so results load correctly|/home/ubuntu/tasks/scripts/track-order-results-not-loading.sh
-customer-id-numeric-validation|Enforce numeric-only standard Customer ID input while preserving default ID exception|/home/ubuntu/tasks/scripts/customer-id-numeric-validation.sh
+# task|type|description|script_path
+dispatch-dashboard-change-driver-autocomplete|ui|Add autocomplete combobox for change driver selection on dispatch dashboard|/home/ubuntu/tasks/scripts/dispatch-dashboard-change-driver-autocomplete.sh
+dispatch-dashboard-unassign-driver|ui|Add Unassign button next to Change Driver on dispatch dashboard|/home/ubuntu/tasks/scripts/dispatch-dashboard-unassign-driver.sh
+manage-teams-scroll-fix|ui|Fix Manage Teams scrolling so the table does not handle scrolling incorrectly|/home/ubuntu/tasks/scripts/manage-teams-scroll-fix.sh
+manage-teams-delete-user|full-stack|Add delete user button on Manage Teams|/home/ubuntu/tasks/scripts/manage-teams-delete-user.sh
+settings-pricing-copy-update|ui|Update Pricing Settings copy in Settings|/home/ubuntu/tasks/scripts/settings-pricing-copy-update.sh
+track-order-results-not-loading|full-stack|Fix Track an Order page so results load correctly|/home/ubuntu/tasks/scripts/track-order-results-not-loading.sh
+customer-id-numeric-validation|api|Enforce numeric-only standard Customer ID input while preserving default ID exception|/home/ubuntu/tasks/scripts/customer-id-numeric-validation.sh

@@ -35,11 +35,12 @@ echo "Batch label: $LABEL" | tee "$SUMMARY_FILE"
 echo "Project: $PROJECT" | tee -a "$SUMMARY_FILE"
 echo "Batch file: $BATCH_FILE" | tee -a "$SUMMARY_FILE"
 echo "Batch dir: $BATCH_DIR" | tee -a "$SUMMARY_FILE"
-echo -e "task\tdescription\tscript\tpid\tlauncher_log" > "$MANIFEST_FILE"
+echo -e "task\ttype\tdescription\tscript\tpid\tlauncher_log" > "$MANIFEST_FILE"
 
-while IFS='|' read -r TASK_NAME DESCRIPTION SCRIPT_PATH; do
+while IFS='|' read -r TASK_NAME TASK_TYPE DESCRIPTION SCRIPT_PATH; do
     [[ -z "${TASK_NAME// }" ]] && continue
     [[ "$TASK_NAME" =~ ^# ]] && continue
+    TASK_TYPE="${TASK_TYPE:-general}"
 
     if [ ! -f "$SCRIPT_PATH" ]; then
         echo "Skipping $TASK_NAME: script not found at $SCRIPT_PATH" | tee -a "$SUMMARY_FILE"
@@ -54,6 +55,7 @@ while IFS='|' read -r TASK_NAME DESCRIPTION SCRIPT_PATH; do
         "$RUNNER"
         --project "$PROJECT"
         --task "$TASK_NAME"
+        --type "$TASK_TYPE"
         --desc "$DESCRIPTION"
         --script "$SCRIPT_PATH"
     )
@@ -62,7 +64,7 @@ while IFS='|' read -r TASK_NAME DESCRIPTION SCRIPT_PATH; do
     setsid bash -lc "exec ${CMD_STRING}" >"$LAUNCHER_LOG" 2>&1 </dev/null &
     PID=$!
 
-    echo -e "${TASK_NAME}\t${DESCRIPTION}\t${SCRIPT_PATH}\t${PID}\t${LAUNCHER_LOG}" >> "$MANIFEST_FILE"
+    echo -e "${TASK_NAME}\t${TASK_TYPE}\t${DESCRIPTION}\t${SCRIPT_PATH}\t${PID}\t${LAUNCHER_LOG}" >> "$MANIFEST_FILE"
     echo -e "${PID}\t${TASK_NAME}" >> "$PIDS_FILE"
     echo "Started $TASK_NAME (pid $PID)" | tee -a "$SUMMARY_FILE"
 done < "$BATCH_FILE"
