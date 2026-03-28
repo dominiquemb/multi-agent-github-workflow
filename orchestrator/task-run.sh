@@ -1,10 +1,67 @@
 #!/bin/bash
 
+set -o pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER_ASSETS_DIR="$SCRIPT_DIR/docker-dev-container"
 
 # Create logs directory
 mkdir -p ~/tasks/logs
+
+log() {
+    local message="$1"
+    echo "[$(date -Is)] $message" | tee -a "$LOG_FILE"
+}
+
+run_logged() {
+    local step="$1"
+    shift
+    local output=""
+    local status=0
+
+    log "STEP: $step"
+    set +e
+    output=$("$@" 2>&1)
+    status=$?
+    set -e
+
+    if [ -n "$output" ]; then
+        printf '%s\n' "$output" | tee -a "$LOG_FILE"
+    fi
+
+    if [ "$status" -ne 0 ]; then
+        set_task_status "failed_host_step" "$step (exit $status)"
+        log "ERROR: step failed: $step (exit $status)"
+        exit "$status"
+    fi
+}
+
+capture_logged() {
+    local step="$1"
+    shift
+    local __resultvar="$1"
+    shift
+    local output=""
+    local status=0
+
+    log "STEP: $step"
+    set +e
+    output=$("$@" 2>&1)
+    status=$?
+    set -e
+
+    if [ -n "$output" ]; then
+        printf '%s\n' "$output" | tee -a "$LOG_FILE"
+    fi
+
+    if [ "$status" -ne 0 ]; then
+        set_task_status "failed_host_step" "$step (exit $status)"
+        log "ERROR: step failed: $step (exit $status)"
+        exit "$status"
+    fi
+
+    printf -v "$__resultvar" '%s' "$output"
+}
 
 docker_cmd() {
     if docker info >/dev/null 2>&1; then
@@ -67,14 +124,46 @@ CONTAINER_NAME="task-${TASK_NAME}-${TIMESTAMP}"
 BRANCH_NAME="task/${TASK_NAME}-${TIMESTAMP}"
 LOG_FILE="$HOME_DIR/tasks/logs/${TASK_NAME}.log"
 ARTIFACTS_DIR="$HOME_DIR/tasks/logs/${TASK_NAME}.artifacts"
+STATUS_DIR="$HOME_DIR/tasks/status"
+STATUS_FILE="$STATUS_DIR/${TASK_NAME}.status"
+FAILURE_REASON_FILE="$STATUS_DIR/${TASK_NAME}.failure_reason"
+BATCH_ID="${TASK_BATCH_ID:-}"
+BATCH_DIR="${TASK_BATCH_DIR:-}"
+
+mkdir -p "$STATUS_DIR"
+
+set_task_status() {
+    local state="$1"
+    local detail="${2:-}"
+    {
+        echo "task=$TASK_NAME"
+        echo "project=$PROJECT"
+        echo "state=$state"
+        echo "timestamp=$(date -Is)"
+        echo "container_name=$CONTAINER_NAME"
+        echo "branch_name=$BRANCH_NAME"
+        echo "log_file=$LOG_FILE"
+        echo "artifacts_dir=$ARTIFACTS_DIR"
+        echo "batch_id=$BATCH_ID"
+        echo "batch_dir=$BATCH_DIR"
+        echo "detail=$detail"
+    } > "$STATUS_FILE"
+
+    if [[ "$state" == failed* ]] && [ -n "$detail" ]; then
+        printf '%s\n' "$detail" > "$FAILURE_REASON_FILE"
+    elif [[ "$state" != failed* ]]; then
+        rm -f "$FAILURE_REASON_FILE"
+    fi
+}
 
 echo "=== Task Runner ===" | tee -a "$LOG_FILE"
-echo "Project: $PROJECT | Task: $TASK_NAME | Repos: $REPOS" | tee -a "$LOG_FILE"
-echo "Git remotes: $GIT_REMOTES" | tee -a "$LOG_FILE"
-echo "Log file: $LOG_FILE" | tee -a "$LOG_FILE"
-echo "Artifacts dir: $ARTIFACTS_DIR" | tee -a "$LOG_FILE"
+log "Project: $PROJECT | Task: $TASK_NAME | Repos: $REPOS"
+log "Git remotes: $GIT_REMOTES"
+log "Log file: $LOG_FILE"
+log "Artifacts dir: $ARTIFACTS_DIR"
 
 mkdir -p "$ARTIFACTS_DIR"
+set_task_status "starting" "runner initialized"
 
 GH_TOKEN=$(cat $HOME_DIR/.gh_token 2>/dev/null || echo '')
 MODAL_MOUNT_ARGS=""
@@ -123,59 +212,70 @@ if [ -n "${SUBAGENT_FALLBACK_MODELS:-}" ]; then
 fi
 
 # Start container
-echo "Starting container: $CONTAINER_NAME" | tee -a "$LOG_FILE"
+log "Starting container: $CONTAINER_NAME"
+set_task_status "starting_container" "$CONTAINER_NAME"
 if [ "$RUNNING_AS_ROOT" = "true" ]; then
-    sudo docker run -d --name $CONTAINER_NAME -v $HOME_DIR/.ssh:/root/.ssh \
+    capture_logged "docker run $CONTAINER_NAME" CONTAINER_ID \
+      sudo docker run -d --name "$CONTAINER_NAME" -v "$HOME_DIR/.ssh:/root/.ssh" \
       $MODAL_MOUNT_ARGS $CODEX_MOUNT_ARGS $MODAL_ENV_ARGS $MODEL_ENV_ARGS \
       -e GIT_REMOTES="$GIT_REMOTES" -e REPOS="$REPOS" -e PRIMARY_REPO="$PRIMARY_REPO" \
       -e BRANCH_NAME="$BRANCH_NAME" -e TASK_NAME="$TASK_NAME" -e NOTIFY_USER="$NOTIFY_USER" \
       -e DESCRIPTION="$DESCRIPTION" -e GH_TOKEN="$GH_TOKEN" \
       -e GIT_AUTHOR_EMAIL='dominiquemb@users.noreply.github.com' \
-      task-runner-base:latest bash -c "Xvfb :99 -screen 0 1920x1080x24 & fluxbox & sleep 2; tail -f /dev/null" 2>&1 | tee -a "$LOG_FILE"
+      task-runner-base:latest bash -c "Xvfb :99 -screen 0 1920x1080x24 & fluxbox & sleep 2; tail -f /dev/null"
 else
-    docker_cmd run -d --name $CONTAINER_NAME -v ~/.ssh:/root/.ssh \
+    capture_logged "docker run $CONTAINER_NAME" CONTAINER_ID \
+      docker_cmd run -d --name "$CONTAINER_NAME" -v "$HOME_DIR/.ssh:/root/.ssh" \
       $MODAL_MOUNT_ARGS $CODEX_MOUNT_ARGS $MODAL_ENV_ARGS $MODEL_ENV_ARGS \
       -e GIT_REMOTES="$GIT_REMOTES" -e REPOS="$REPOS" -e PRIMARY_REPO="$PRIMARY_REPO" \
       -e BRANCH_NAME="$BRANCH_NAME" -e TASK_NAME="$TASK_NAME" -e NOTIFY_USER="$NOTIFY_USER" \
       -e DESCRIPTION="$DESCRIPTION" -e GH_TOKEN="$GH_TOKEN" \
       -e GIT_AUTHOR_EMAIL='dominiquemb@users.noreply.github.com' \
-      task-runner-base:latest bash -c "Xvfb :99 -screen 0 1920x1080x24 & fluxbox & sleep 2; tail -f /dev/null" 2>&1 | tee -a "$LOG_FILE"
+      task-runner-base:latest bash -c "Xvfb :99 -screen 0 1920x1080x24 & fluxbox & sleep 2; tail -f /dev/null"
 fi
 
 sleep 3
 
+CONTAINER_ID="$(printf '%s\n' "$CONTAINER_ID" | tail -n 1 | tr -d '\r')"
+[ -z "$CONTAINER_ID" ] && { set_task_status "failed_host_step" "docker run returned no container id"; log "ERROR: docker run returned no container id"; exit 1; }
+set_task_status "container_started" "$CONTAINER_ID"
+
 # Copy task script
-echo "Copying task script to container" | tee -a "$LOG_FILE"
+log "Copying task script to container"
+set_task_status "copying_task_script" "/workspace/task.sh"
 if [ "$RUNNING_AS_ROOT" = "true" ]; then
-    sudo docker cp "$SCRIPT_PATH" $CONTAINER_NAME:/workspace/task.sh 2>&1 | tee -a "$LOG_FILE"
+    run_logged "docker cp task script" sudo docker cp "$SCRIPT_PATH" "$CONTAINER_NAME:/workspace/task.sh"
 else
-    docker_cmd cp "$SCRIPT_PATH" $CONTAINER_NAME:/workspace/task.sh 2>&1 | tee -a "$LOG_FILE"
+    run_logged "docker cp task script" docker_cmd cp "$SCRIPT_PATH" "$CONTAINER_NAME:/workspace/task.sh"
 fi
 
 # Copy canonical container-side spawn-subagent.sh
-echo "Copying canonical spawn-subagent.sh to container" | tee -a "$LOG_FILE"
+log "Copying canonical spawn-subagent.sh to container"
+set_task_status "copying_launcher" "/workspace/spawn-subagent.sh"
 if [ "$RUNNING_AS_ROOT" = "true" ]; then
-    sudo docker cp "$CONTAINER_ASSETS_DIR/spawn-subagent.sh" $CONTAINER_NAME:/workspace/spawn-subagent.sh 2>&1 | tee -a "$LOG_FILE"
-    sudo docker exec $CONTAINER_NAME chmod +x /workspace/spawn-subagent.sh 2>&1 | tee -a "$LOG_FILE"
+    run_logged "docker cp spawn-subagent.sh" sudo docker cp "$CONTAINER_ASSETS_DIR/spawn-subagent.sh" "$CONTAINER_NAME:/workspace/spawn-subagent.sh"
+    run_logged "docker exec chmod spawn-subagent.sh" sudo docker exec "$CONTAINER_NAME" chmod +x /workspace/spawn-subagent.sh
 else
-    docker_cmd cp "$CONTAINER_ASSETS_DIR/spawn-subagent.sh" $CONTAINER_NAME:/workspace/spawn-subagent.sh 2>&1 | tee -a "$LOG_FILE"
-    docker_cmd exec $CONTAINER_NAME chmod +x /workspace/spawn-subagent.sh 2>&1 | tee -a "$LOG_FILE"
+    run_logged "docker cp spawn-subagent.sh" docker_cmd cp "$CONTAINER_ASSETS_DIR/spawn-subagent.sh" "$CONTAINER_NAME:/workspace/spawn-subagent.sh"
+    run_logged "docker exec chmod spawn-subagent.sh" docker_cmd exec "$CONTAINER_NAME" chmod +x /workspace/spawn-subagent.sh
 fi
 
 # Copy identity files
-echo "Copying identity files to container" | tee -a "$LOG_FILE"
+log "Copying identity files to container"
+set_task_status "copying_identity" "/workspace/SOUL.md,/workspace/AGENTS.md,/workspace/USER.md"
 if [ "$RUNNING_AS_ROOT" = "true" ]; then
-    sudo docker cp "$CONTAINER_ASSETS_DIR/SOUL.md" $CONTAINER_NAME:/workspace/SOUL.md 2>&1 | tee -a "$LOG_FILE"
-    sudo docker cp "$CONTAINER_ASSETS_DIR/AGENTS.md" $CONTAINER_NAME:/workspace/AGENTS.md 2>&1 | tee -a "$LOG_FILE"
-    sudo docker cp "$CONTAINER_ASSETS_DIR/USER.md" $CONTAINER_NAME:/workspace/USER.md 2>&1 | tee -a "$LOG_FILE"
+    run_logged "docker cp SOUL.md" sudo docker cp "$CONTAINER_ASSETS_DIR/SOUL.md" "$CONTAINER_NAME:/workspace/SOUL.md"
+    run_logged "docker cp AGENTS.md" sudo docker cp "$CONTAINER_ASSETS_DIR/AGENTS.md" "$CONTAINER_NAME:/workspace/AGENTS.md"
+    run_logged "docker cp USER.md" sudo docker cp "$CONTAINER_ASSETS_DIR/USER.md" "$CONTAINER_NAME:/workspace/USER.md"
 else
-    docker_cmd cp "$CONTAINER_ASSETS_DIR/SOUL.md" $CONTAINER_NAME:/workspace/SOUL.md 2>&1 | tee -a "$LOG_FILE"
-    docker_cmd cp "$CONTAINER_ASSETS_DIR/AGENTS.md" $CONTAINER_NAME:/workspace/AGENTS.md 2>&1 | tee -a "$LOG_FILE"
-    docker_cmd cp "$CONTAINER_ASSETS_DIR/USER.md" $CONTAINER_NAME:/workspace/USER.md 2>&1 | tee -a "$LOG_FILE"
+    run_logged "docker cp SOUL.md" docker_cmd cp "$CONTAINER_ASSETS_DIR/SOUL.md" "$CONTAINER_NAME:/workspace/SOUL.md"
+    run_logged "docker cp AGENTS.md" docker_cmd cp "$CONTAINER_ASSETS_DIR/AGENTS.md" "$CONTAINER_NAME:/workspace/AGENTS.md"
+    run_logged "docker cp USER.md" docker_cmd cp "$CONTAINER_ASSETS_DIR/USER.md" "$CONTAINER_NAME:/workspace/USER.md"
 fi
 
 # Execute in container
-echo "Executing task in container" | tee -a "$LOG_FILE"
+log "Executing task in container"
+set_task_status "executing" "docker exec"
 TASK_EXIT_CODE=0
 if [ "$RUNNING_AS_ROOT" = "true" ]; then
     set +e
@@ -283,9 +383,9 @@ $(cat /workspace/_task_artifacts/visual-artifacts-note.txt)"
         echo "## Visual artifacts"
         for img in e2e/screenshots/task-${TASK_NAME}/*.png e2e/screenshots/task-${TASK_NAME}/*.jpg e2e/screenshots/task-${TASK_NAME}/*.jpeg; do
           [ -f "$img" ] || continue
-          raw_url="https://raw.githubusercontent.com/$repo_slug/$commit_sha/$img"
+          blob_url="https://github.com/$repo_slug/blob/$commit_sha/$img"
           echo
-          echo "![${img##*/}]($raw_url)"
+          echo "- [${img##*/}]($blob_url)"
         done
         video_printed=0
         for vid in e2e/screenshots/task-${TASK_NAME}/*.webm e2e/screenshots/task-${TASK_NAME}/*.mp4; do
@@ -305,14 +405,22 @@ $(cat /workspace/_task_artifacts/visual-artifacts-note.txt)"
   }
 ' 2>&1 | tee -a "$LOG_FILE"
     TASK_EXIT_CODE=${PIPESTATUS[0]}
-    sudo docker cp "$CONTAINER_NAME:/workspace/_task_artifacts/." "$ARTIFACTS_DIR/" 2>/dev/null | tee -a "$LOG_FILE" || true
+    set +e
+    sudo docker cp "$CONTAINER_NAME:/workspace/_task_artifacts/." "$ARTIFACTS_DIR/" 2>&1 | tee -a "$LOG_FILE"
+    COPY_ARTIFACTS_EXIT_CODE=${PIPESTATUS[0]}
     set -e
+    if [ "$COPY_ARTIFACTS_EXIT_CODE" -ne 0 ]; then
+        log "Artifact copy returned exit $COPY_ARTIFACTS_EXIT_CODE"
+    fi
 
     if [ "$TASK_EXIT_CODE" -eq 0 ]; then
-        sudo docker stop $CONTAINER_NAME 2>&1 | tee -a "$LOG_FILE"
-        sudo docker rm $CONTAINER_NAME 2>&1 | tee -a "$LOG_FILE"
+        set_task_status "cleanup" "stopping container"
+        run_logged "docker stop $CONTAINER_NAME" sudo docker stop "$CONTAINER_NAME"
+        run_logged "docker rm $CONTAINER_NAME" sudo docker rm "$CONTAINER_NAME"
     else
-        echo "Task failed; preserving container for inspection: $CONTAINER_NAME" | tee -a "$LOG_FILE"
+        set_task_status "failed_task" "task execution exit $TASK_EXIT_CODE"
+        log "ERROR: task execution failed with exit $TASK_EXIT_CODE"
+        log "Task failed; preserving container for inspection: $CONTAINER_NAME"
         exit "$TASK_EXIT_CODE"
     fi
 else
@@ -443,17 +551,26 @@ $(cat /workspace/_task_artifacts/visual-artifacts-note.txt)"
   }
 ' 2>&1 | tee -a "$LOG_FILE"
     TASK_EXIT_CODE=${PIPESTATUS[0]}
-    docker_cmd cp "$CONTAINER_NAME:/workspace/_task_artifacts/." "$ARTIFACTS_DIR/" 2>/dev/null | tee -a "$LOG_FILE" || true
+    set +e
+    docker_cmd cp "$CONTAINER_NAME:/workspace/_task_artifacts/." "$ARTIFACTS_DIR/" 2>&1 | tee -a "$LOG_FILE"
+    COPY_ARTIFACTS_EXIT_CODE=${PIPESTATUS[0]}
     set -e
+    if [ "$COPY_ARTIFACTS_EXIT_CODE" -ne 0 ]; then
+        log "Artifact copy returned exit $COPY_ARTIFACTS_EXIT_CODE"
+    fi
 
     if [ "$TASK_EXIT_CODE" -eq 0 ]; then
-        docker_cmd stop $CONTAINER_NAME 2>&1 | tee -a "$LOG_FILE"
-        docker_cmd rm $CONTAINER_NAME 2>&1 | tee -a "$LOG_FILE"
+        set_task_status "cleanup" "stopping container"
+        run_logged "docker stop $CONTAINER_NAME" docker_cmd stop "$CONTAINER_NAME"
+        run_logged "docker rm $CONTAINER_NAME" docker_cmd rm "$CONTAINER_NAME"
     else
-        echo "Task failed; preserving container for inspection: $CONTAINER_NAME" | tee -a "$LOG_FILE"
+        set_task_status "failed_task" "task execution exit $TASK_EXIT_CODE"
+        log "ERROR: task execution failed with exit $TASK_EXIT_CODE"
+        log "Task failed; preserving container for inspection: $CONTAINER_NAME"
         exit "$TASK_EXIT_CODE"
     fi
 fi
 
-echo "Task completed" | tee -a "$LOG_FILE"
-echo "Log file: $LOG_FILE" | tee -a "$LOG_FILE"
+set_task_status "completed" "success"
+log "Task completed"
+log "Log file: $LOG_FILE"

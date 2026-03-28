@@ -204,6 +204,107 @@ ls ~/tasks/logs/<task>.artifacts
 
 Failed tasks preserve the container for inspection instead of deleting it immediately.
 
+Each task log now records host-side step boundaries such as:
+
+- `STEP: docker run ...`
+- `STEP: docker cp ...`
+- `STEP: docker exec ...`
+- explicit `ERROR: step failed: ... (exit N)` lines
+
+That makes it possible to distinguish:
+
+- launcher failure before the container starts
+- container setup failure
+- in-container task failure
+- artifact copy failure
+
+## Batch Launching
+
+Use the host-side batch launcher when you want to start multiple tasks at once and leave them running:
+
+```bash
+/home/ubuntu/multi-agent-github-workflow/orchestrator/run-task-batch.sh \
+  --project healthtrac \
+  --batch /home/ubuntu/multi-agent-github-workflow/orchestrator/batches/healthtrac-current-tasks.txt \
+  --label healthtrac-current
+```
+
+Batch file format:
+
+```text
+task-name|Plain English description|/absolute/path/to/task-script.sh
+```
+
+The launcher writes batch metadata under:
+
+- `~/tasks/batches/<label>-<timestamp>/summary.txt`
+- `~/tasks/batches/<label>-<timestamp>/manifest.tsv`
+- `~/tasks/batches/<label>-<timestamp>/pids.tsv`
+
+Each task still writes its own:
+
+- `~/tasks/logs/<task>.launcher.log`
+- `~/tasks/logs/<task>.log`
+- `~/tasks/logs/<task>.artifacts/`
+- `~/tasks/status/<task>.status`
+- `~/tasks/status/<task>.failure_reason`
+
+## AI-Triggered Queueing
+
+If you want the AI to trigger a batch without depending on the current interactive session staying alive, use the queue + dispatcher flow.
+
+Start the dispatcher once on the host:
+
+```bash
+/home/ubuntu/multi-agent-github-workflow/orchestrator/start-batch-dispatcher.sh
+```
+
+Enqueue a batch request:
+
+```bash
+/home/ubuntu/multi-agent-github-workflow/orchestrator/enqueue-task-batch.sh \
+  --project healthtrac \
+  --batch /home/ubuntu/multi-agent-github-workflow/orchestrator/batches/healthtrac-current-tasks.txt \
+  --label healthtrac-current
+```
+
+The dispatcher watches:
+
+- `~/tasks/queue/`
+- `~/tasks/queue-running/`
+- `~/tasks/queue-done/`
+- `~/tasks/queue-failed/`
+
+## Status And Debugging
+
+Check dispatcher and queue state:
+
+```bash
+/home/ubuntu/multi-agent-github-workflow/orchestrator/batch-status.sh
+```
+
+Stop a batch by label fragment:
+
+```bash
+/home/ubuntu/multi-agent-github-workflow/orchestrator/batch-stop.sh healthtrac-current
+```
+
+Each task now writes explicit states such as:
+
+- `starting`
+- `starting_container`
+- `container_started`
+- `copying_task_script`
+- `copying_launcher`
+- `copying_identity`
+- `executing`
+- `cleanup`
+- `completed`
+- `failed_host_step`
+- `failed_task`
+
+The failure reason file captures the most recent host-side or task-side reason when available.
+
 ## Cleanup
 
 ```bash
