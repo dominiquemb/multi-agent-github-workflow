@@ -15,6 +15,7 @@ OPENCLAW_VLLM_MODEL_ID="${OPENCLAW_VLLM_MODEL_ID:-qwen32b}"
 OPENCLAW_VLLM_API_KEY="${OPENCLAW_VLLM_API_KEY:-${VLLM_API_KEY:-modal-local-test}}"
 SUBAGENT_FOREGROUND="${SUBAGENT_FOREGROUND:-0}"
 TASK_TYPE="${TASK_TYPE:-general}"
+REQUIRED_REPOS="${REQUIRED_REPOS:-}"
 
 if [ -z "$TASK_DESCRIPTION" ]; then
     echo "Usage: $0 'Task description' [agent-id] [max-turns] [model] [fallback-models]"
@@ -34,6 +35,7 @@ echo "Max Turns: $MAX_TURNS"
 echo "Model: ${MODEL:-default}"
 echo "Fallback Models: ${FALLBACK_MODELS:-none}"
 echo "Task Type: $TASK_TYPE"
+echo "Required Repos: ${REQUIRED_REPOS:-none specified}"
 echo "Working directory: $(pwd)"
 echo "Time: $(date)"
 echo "========================================"
@@ -79,11 +81,12 @@ MISSION_BRIEF="You are an autonomous coding agent. Your task:
 $TASK_DESCRIPTION
 
 Task type: $TASK_TYPE
+Required repos: ${REQUIRED_REPOS:-none specified}
 
 $TASK_TYPE_RULES
 
 Rules:
-1. Explore the codebase to understand the structure
+1. Explore the codebase to understand the structure, including every required repo when any are specified
 2. Identify which files need to be changed
 3. Make the necessary changes
 4. Do NOT ask questions - make decisions autonomously
@@ -99,7 +102,12 @@ Rules:
 14. If UI changes were made and no screenshots or videos were generated, treat the task as incomplete and exit non-zero
 15. If the repository includes a database dump, seed file, or snapshot needed for local app or API behavior, install or start the required database service, restore the dump, and run the relevant migrations before verification
 16. If the task affects API, backend, or persistence behavior, you must verify that path explicitly; if you could not verify it, treat the task as incomplete and exit non-zero
-17. When complete, exit with code 0
+17. Write a concise execution note to /workspace/_task_artifacts/backend-evidence/agent-notes.txt using this exact repeated structure for every required repo you inspected:
+REPO: <repo name>
+STATUS: changed | inspected-no-change | not-inspected
+REASON: <one concise sentence>
+VERIFICATION: <one concise sentence>
+18. When complete, exit with code 0
 
 Work in the directory: $(pwd)"
 
@@ -174,7 +182,7 @@ run_subagent() {
 
         if [ "$selected_model" = "codex" ] || [[ "$selected_model" == codex/* ]]; then
             codex_cmd=(
-                codex exec
+                /workspace/run-codex.sh
                 --cd "$(pwd)"
                 --skip-git-repo-check
                 --json

@@ -61,6 +61,8 @@ The base image currently includes:
 - FFmpeg, Xvfb, Fluxbox, screenshot tools
 - `@openai/codex`
 - `@qwen-code/qwen-code`
+- `headroom-ai`
+- `rtk`
 
 ### 2. Prepare Host Credentials
 
@@ -81,6 +83,22 @@ Optional:
 - `MODAL_PROFILE`
 
 Those are only needed if you still use a Modal-backed model path for non-Codex flows.
+
+Optional for Headroom:
+
+- `HEADROOM_ENABLED=1`
+  Enables a local Headroom proxy inside each task container and routes Codex calls through it.
+- `HEADROOM_PORT=8787`
+  Port used by the in-container Headroom proxy.
+- `HEADROOM_HOST=127.0.0.1`
+  Host used for the in-container proxy URL.
+- `HEADROOM_STARTUP_DELAY=2`
+  Seconds to wait after starting the Headroom proxy before launching Codex.
+
+Optional for RTK:
+
+- `RTK_ENABLED=1`
+  Enables RTK's Codex integration inside each task container using an isolated in-container Codex home.
 
 ### 3. Configure Project Families
 
@@ -107,6 +125,15 @@ Create `~/.task-model-config.sh`:
 
 ```bash
 export SUBAGENT_MODEL="codex"
+
+# Optional Headroom integration for Codex calls inside task containers
+# export HEADROOM_ENABLED=1
+# export HEADROOM_PORT=8787
+# export HEADROOM_HOST=127.0.0.1
+# export HEADROOM_STARTUP_DELAY=2
+
+# Optional RTK integration for Codex command rewriting
+# export RTK_ENABLED=1
 
 # Optional fallbacks for non-Codex flows
 # export SUBAGENT_FALLBACK_MODELS="codex/gpt-5.4-mini,qwen"
@@ -152,8 +179,49 @@ For each task, the runner:
 3. clones every repo in the project family
 4. switches into the primary repo
 5. runs `npm install` when `package.json` exists
-6. runs the task script
-7. if changes are meaningful, creates a branch, pushes it, and opens a PR
+6. optionally prepares an isolated RTK-enabled Codex home in-container when `RTK_ENABLED=1`
+7. optionally starts a Headroom proxy in-container for Codex calls when `HEADROOM_ENABLED=1`
+8. runs the task script
+9. if changes are meaningful, creates a branch, pushes it, and opens a PR
+
+## Headroom Integration
+
+The orchestrator now includes an optional Headroom integration for Codex-backed runs.
+
+When `HEADROOM_ENABLED=1` is present in the host environment or `~/.task-model-config.sh`:
+
+- `task-run.sh` forwards the Headroom env vars into each task container
+- the runner copies [run-codex.sh](/home/ubuntu/dev-workflow/orchestrator/docker-dev-container/run-codex.sh) into `/workspace/run-codex.sh`
+- all container-side Codex invocations go through that wrapper
+- the wrapper starts `headroom proxy --port <port>` and points Codex at `http://127.0.0.1:<port>/v1`
+
+This currently covers:
+
+- the main sub-agent execution path
+- screenshot QA review passes
+- sufficiency review passes
+
+It is disabled by default so existing Codex behavior does not change unless you opt in.
+
+## RTK Integration
+
+The orchestrator now also includes an optional RTK integration for Codex-backed runs.
+
+When `RTK_ENABLED=1` is present in the host environment or `~/.task-model-config.sh`:
+
+- `task-run.sh` forwards `RTK_ENABLED` into each task container
+- [run-codex.sh](/home/ubuntu/dev-workflow/orchestrator/docker-dev-container/run-codex.sh) creates an isolated temporary Codex home
+- it copies the mounted `/root/.codex` config into that temporary home
+- it runs `rtk init -g --codex` there before launching Codex
+- Codex then runs with RTK-managed command rewriting without mutating the host-mounted `~/.codex`
+
+This currently covers the same container-side Codex invocation points as Headroom:
+
+- the main sub-agent execution path
+- screenshot QA review passes
+- sufficiency review passes
+
+`RTK_ENABLED` and `HEADROOM_ENABLED` can be used together.
 
 If the sub-agent exits successfully but only changes metadata or makes no meaningful app changes, the run fails.
 
@@ -166,8 +234,12 @@ Each task automatically captures:
 - screenshots or videos produced by Playwright, Cypress, or explicit screenshot steps
 - a host-side artifact mirror under `~/tasks/logs/<task>.artifacts`
 - PR comments that link to the committed artifact files
+- a general sufficiency review for every task
+- a screenshot QA review for `ui` and `full-stack` tasks when image artifacts exist
 
 If a task changes UI-related files but produces no screenshots or video, the run fails.
+The sufficiency review does not block PR creation; it records concerns, can trigger one follow-up remediation pass, and is posted to the PR comment.
+If the screenshot QA stage finds issues, it now records them in the artifacts and PR comment and can trigger one follow-up remediation pass before the PR is created.
 
 Committed repo location:
 
@@ -176,6 +248,16 @@ Committed repo location:
 Host mirror location:
 
 - `~/tasks/logs/<task>.artifacts/`
+
+Screenshot QA review files:
+
+- `~/tasks/logs/<task>.artifacts/qa/review.txt`
+- `~/tasks/logs/<task>.artifacts/qa/summary.md`
+
+Sufficiency review files:
+
+- `~/tasks/logs/<task>.artifacts/sufficiency/review.txt`
+- `~/tasks/logs/<task>.artifacts/sufficiency/summary.md`
 
 Important note for private repos:
 
@@ -232,7 +314,13 @@ Use the host-side batch launcher when you want to start multiple tasks at once a
 Batch file format:
 
 ```text
-task-name|task-type|Plain English description|/absolute/path/to/task-script.sh
+task-name|task-type|required repo list|Plain English description|/absolute/path/to/task-script.sh
+```
+
+Example:
+
+```text
+track-order-results-not-loading|full-stack|HT360_Web arsmetr_backend|Fix Track an Order page so results load correctly|/home/ubuntu/tasks/scripts/track-order-results-not-loading.sh
 ```
 
 Supported task types:
@@ -255,6 +343,17 @@ Each task still writes its own:
 - `~/tasks/logs/<task>.artifacts/`
 - `~/tasks/status/<task>.status`
 - `~/tasks/status/<task>.failure_reason`
+
+For backend/API visibility, tasks also emit:
+
+- `~/tasks/logs/<task>.artifacts/backend-evidence/summary.md`
+- optional agent-written notes at `~/tasks/logs/<task>.artifacts/backend-evidence/agent-notes.txt`
+
+The sufficiency review now distinguishes required repos as:
+
+- `CHANGED`
+- `OK-UNCHANGED`
+- `MISSING-WORK`
 
 ## AI-Triggered Queueing
 
@@ -321,6 +420,7 @@ The runner can now pass a task type through to the sub-agent:
   --project healthtrac \
   --task track-order-results-not-loading \
   --type full-stack \
+  --required-repos "HT360_Web arsmetr_backend" \
   --desc "Fix Track an Order page so results load correctly" \
   --script /home/ubuntu/tasks/scripts/track-order-results-not-loading.sh
 ```
@@ -335,6 +435,8 @@ Type behavior:
   - requires cross-repo inspection and verification across UI + backend layers
 - `general`
   - default if no type is specified
+
+If `--required-repos` is omitted, the runner now auto-escalates some backend-suspect descriptions to `full-stack` and defaults the required repo set to the full project family.
 
 ## Cleanup
 

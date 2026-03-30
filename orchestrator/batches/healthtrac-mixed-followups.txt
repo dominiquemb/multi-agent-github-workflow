@@ -1,0 +1,11 @@
+# task|type|description|script_path
+temperature-pill-colors-restore|ui|Restore the temperature pill colors from a previous commit|/home/ubuntu/tasks/scripts/temperature-pill-colors-restore.sh
+edit-company-settings-page-blank|full-stack|Fix the blank Edit Company Settings page and restore the expected settings UI|/home/ubuntu/tasks/scripts/edit-company-settings-page-blank.sh
+will-call-template-dropdown-not-loading|full-stack|Fix the will call template dropdown so templates load correctly|/home/ubuntu/tasks/scripts/will-call-template-dropdown-not-loading.sh
+track-routes-order-spinner|ui|Show a spinner when loading order details on the Track Routes page|/home/ubuntu/tasks/scripts/track-routes-order-spinner.sh
+route-tracking-exceptions-icon-blink|ui|Make the exceptions icon blink on the Route Tracking page|/home/ubuntu/tasks/scripts/route-tracking-exceptions-icon-blink.sh
+route-tracking-order-details-google-maps|full-stack|Switch the Route Tracking order details modal map from Mapbox to Google Maps|/home/ubuntu/tasks/scripts/route-tracking-order-details-google-maps.sh
+login-page-dark-mode-background-restore|ui|Restore the login page dark mode background from the recent regression|/home/ubuntu/tasks/scripts/login-page-dark-mode-background-restore.sh
+order-id-numeric-only-format|api|Use numeric order IDs instead of alphanumeric IDs|/home/ubuntu/tasks/scripts/order-id-numeric-only-format.sh
+dispatch-dashboard-template-id-column|ui|Add Template ID to the dispatch dashboard configurable columns list|/home/ubuntu/tasks/scripts/dispatch-dashboard-template-id-column.sh
+dispatch-dashboard-pending-to-unassigned|ui|Change Pending to Unassigned on the dispatch dashboard|/home/ubuntu/tasks/scripts/dispatch-dashboard-pending-to-unassigned.sh

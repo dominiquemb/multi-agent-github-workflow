@@ -35,12 +35,22 @@ echo "Batch label: $LABEL" | tee "$SUMMARY_FILE"
 echo "Project: $PROJECT" | tee -a "$SUMMARY_FILE"
 echo "Batch file: $BATCH_FILE" | tee -a "$SUMMARY_FILE"
 echo "Batch dir: $BATCH_DIR" | tee -a "$SUMMARY_FILE"
-echo -e "task\ttype\tdescription\tscript\tpid\tlauncher_log" > "$MANIFEST_FILE"
+echo -e "task\ttype\trequired_repos\tdescription\tscript\tpid\tlauncher_log" > "$MANIFEST_FILE"
 
-while IFS='|' read -r TASK_NAME TASK_TYPE DESCRIPTION SCRIPT_PATH; do
+while IFS='|' read -r TASK_NAME TASK_TYPE COL3 COL4 COL5; do
     [[ -z "${TASK_NAME// }" ]] && continue
     [[ "$TASK_NAME" =~ ^# ]] && continue
     TASK_TYPE="${TASK_TYPE:-general}"
+
+    if [ -n "${COL5:-}" ]; then
+        REQUIRED_REPOS="${COL3:-}"
+        DESCRIPTION="${COL4:-}"
+        SCRIPT_PATH="${COL5:-}"
+    else
+        REQUIRED_REPOS=""
+        DESCRIPTION="${COL3:-}"
+        SCRIPT_PATH="${COL4:-}"
+    fi
 
     if [ ! -f "$SCRIPT_PATH" ]; then
         echo "Skipping $TASK_NAME: script not found at $SCRIPT_PATH" | tee -a "$SUMMARY_FILE"
@@ -56,6 +66,7 @@ while IFS='|' read -r TASK_NAME TASK_TYPE DESCRIPTION SCRIPT_PATH; do
         --project "$PROJECT"
         --task "$TASK_NAME"
         --type "$TASK_TYPE"
+        --required-repos "$REQUIRED_REPOS"
         --desc "$DESCRIPTION"
         --script "$SCRIPT_PATH"
     )
@@ -64,7 +75,7 @@ while IFS='|' read -r TASK_NAME TASK_TYPE DESCRIPTION SCRIPT_PATH; do
     setsid bash -lc "exec ${CMD_STRING}" >"$LAUNCHER_LOG" 2>&1 </dev/null &
     PID=$!
 
-    echo -e "${TASK_NAME}\t${TASK_TYPE}\t${DESCRIPTION}\t${SCRIPT_PATH}\t${PID}\t${LAUNCHER_LOG}" >> "$MANIFEST_FILE"
+    echo -e "${TASK_NAME}\t${TASK_TYPE}\t${REQUIRED_REPOS}\t${DESCRIPTION}\t${SCRIPT_PATH}\t${PID}\t${LAUNCHER_LOG}" >> "$MANIFEST_FILE"
     echo -e "${PID}\t${TASK_NAME}" >> "$PIDS_FILE"
     echo "Started $TASK_NAME (pid $PID)" | tee -a "$SUMMARY_FILE"
 done < "$BATCH_FILE"

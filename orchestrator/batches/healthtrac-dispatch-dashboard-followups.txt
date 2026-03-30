@@ -1,0 +1,9 @@
+# task|type|description|script_path
+dispatch-dashboard-driver-selection-highlight|ui|Fix driver highlighting when selecting a different driver on the dispatch dashboard|/home/ubuntu/tasks/scripts/dispatch-dashboard-driver-selection-highlight.sh
+dispatch-dashboard-super-admin-drivers|full-stack|Fix drivers not showing up for super admin on the dispatch dashboard|/home/ubuntu/tasks/scripts/dispatch-dashboard-super-admin-drivers.sh
+dispatch-dashboard-change-driver-dropdown-overflow|ui|Fix the change driver dropdown so it can overflow without being cut off|/home/ubuntu/tasks/scripts/dispatch-dashboard-change-driver-dropdown-overflow.sh
+dispatch-dashboard-reassign-all-driver-orders|full-stack|Add a button to reassign all of a driver's orders|/home/ubuntu/tasks/scripts/dispatch-dashboard-reassign-all-driver-orders.sh
+dispatch-dashboard-unassign-all-driver-orders|full-stack|Add a button to unassign all of a driver's orders|/home/ubuntu/tasks/scripts/dispatch-dashboard-unassign-all-driver-orders.sh
+dispatch-dashboard-map-zoom-glitch|ui|Fix the dispatch dashboard map zoom-out glitch|/home/ubuntu/tasks/scripts/dispatch-dashboard-map-zoom-glitch.sh
+dispatch-dashboard-driver-icon-polylines|full-stack|Clicking a driver's car icon or pin should show all their order polylines on the map|/home/ubuntu/tasks/scripts/dispatch-dashboard-driver-icon-polylines.sh
+dispatch-dashboard-driver-card-map-filter|ui|Clicking a driver card should show only that driver on the dispatch dashboard map|/home/ubuntu/tasks/scripts/dispatch-dashboard-driver-card-map-filter.sh

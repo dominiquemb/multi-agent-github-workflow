@@ -1,0 +1,3 @@
+# task|type|description|script_path
+place-order-map-border|ui|Show white space around the map on the place-order page and add a border|/home/ubuntu/tasks/scripts/place-order-map-border.sh
+place-order-default-address-no-modal|full-stack|Use default address should apply the address directly instead of opening the modal|/home/ubuntu/tasks/scripts/place-order-default-address-no-modal.sh
