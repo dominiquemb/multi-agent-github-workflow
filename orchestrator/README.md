@@ -355,6 +355,34 @@ The sufficiency review now distinguishes required repos as:
 - `OK-UNCHANGED`
 - `MISSING-WORK`
 
+## Task Memory
+
+The orchestrator now includes a small Codex-native task memory layer in:
+
+- [task-memory.py](/home/ubuntu/dev-workflow/orchestrator/task-memory.py)
+
+It stores task runs in:
+
+- `~/tasks/memory.db`
+
+Each completed or failed run records:
+
+- task metadata
+- required repos
+- changed repos inferred from related PRs
+- backend evidence summary
+- sufficiency review summary
+- screenshot QA summary
+- related PR references
+
+Useful commands:
+
+```bash
+python3 /home/ubuntu/multi-agent-github-workflow/orchestrator/task-memory.py init
+python3 /home/ubuntu/multi-agent-github-workflow/orchestrator/task-memory.py search "template dropdown"
+python3 /home/ubuntu/multi-agent-github-workflow/orchestrator/task-memory.py history healthtrac
+```
+
 ## AI-Triggered Queueing
 
 If you want the AI to trigger a batch without depending on the current interactive session staying alive, use the queue + dispatcher flow.

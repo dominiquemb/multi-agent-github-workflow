@@ -4,6 +4,8 @@ set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER_ASSETS_DIR="$SCRIPT_DIR/docker-dev-container"
+TASK_MEMORY_CLI="$SCRIPT_DIR/task-memory.py"
+TASK_MEMORY_DB="${TASK_MEMORY_DB:-$HOME/tasks/memory.db}"
 
 # Create logs directory
 mkdir -p ~/tasks/logs
@@ -171,6 +173,43 @@ set_task_status() {
     fi
 }
 
+record_task_memory() {
+    local state="$1"
+    local detail="${2:-}"
+    local changed_repos_file="$ARTIFACTS_DIR/multi-repo-prs.txt"
+    local backend_evidence_file="$ARTIFACTS_DIR/backend-evidence/summary.md"
+    local sufficiency_review_file="$ARTIFACTS_DIR/sufficiency/summary.md"
+    local qa_review_file="$ARTIFACTS_DIR/qa/summary.md"
+    local related_prs_file="$ARTIFACTS_DIR/multi-repo-prs.txt"
+    local changed_repos=""
+
+    if [ -f "$related_prs_file" ]; then
+        changed_repos="$(cut -f1 "$related_prs_file" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+    fi
+
+    if [ ! -f "$TASK_MEMORY_CLI" ]; then
+        return 0
+    fi
+
+    python3 "$TASK_MEMORY_CLI" --db "$TASK_MEMORY_DB" record \
+        --task-name "$TASK_NAME" \
+        --project "$PROJECT" \
+        --task-type "$TASK_TYPE" \
+        --description "$DESCRIPTION" \
+        --required-repos "$REQUIRED_REPOS" \
+        --branch-name "$BRANCH_NAME" \
+        --state "$state" \
+        --detail "$detail" \
+        --artifacts-dir "$ARTIFACTS_DIR" \
+        --log-file "$LOG_FILE" \
+        --changed-repos "$changed_repos" \
+        --backend-evidence-file "$backend_evidence_file" \
+        --sufficiency-review-file "$sufficiency_review_file" \
+        --qa-review-file "$qa_review_file" \
+        --related-prs-file "$related_prs_file" \
+        >/dev/null 2>&1 || true
+}
+
 echo "=== Task Runner ===" | tee -a "$LOG_FILE"
 log "Project: $PROJECT | Task: $TASK_NAME | Type: $TASK_TYPE | Repos: $REPOS"
 log "Required repos: ${REQUIRED_REPOS:-none specified}"
@@ -179,6 +218,7 @@ log "Log file: $LOG_FILE"
 log "Artifacts dir: $ARTIFACTS_DIR"
 
 mkdir -p "$ARTIFACTS_DIR"
+python3 "$TASK_MEMORY_CLI" --db "$TASK_MEMORY_DB" init >/dev/null 2>&1 || true
 set_task_status "starting" "runner initialized"
 
 GH_TOKEN=$(cat $HOME_DIR/.gh_token 2>/dev/null || echo '')
@@ -846,6 +886,7 @@ Backend evidence summary attached in follow-up PR comment."
         run_logged "docker rm $CONTAINER_NAME" sudo docker rm "$CONTAINER_NAME"
     else
         set_task_status "failed_task" "task execution exit $TASK_EXIT_CODE"
+        record_task_memory "failed_task" "task execution exit $TASK_EXIT_CODE"
         log "ERROR: task execution failed with exit $TASK_EXIT_CODE"
         log "Task failed; preserving container for inspection: $CONTAINER_NAME"
         exit "$TASK_EXIT_CODE"
@@ -1105,6 +1146,7 @@ Backend evidence summary attached in follow-up PR comment."
         run_logged "docker rm $CONTAINER_NAME" docker_cmd rm "$CONTAINER_NAME"
     else
         set_task_status "failed_task" "task execution exit $TASK_EXIT_CODE"
+        record_task_memory "failed_task" "task execution exit $TASK_EXIT_CODE"
         log "ERROR: task execution failed with exit $TASK_EXIT_CODE"
         log "Task failed; preserving container for inspection: $CONTAINER_NAME"
         exit "$TASK_EXIT_CODE"
@@ -1112,5 +1154,6 @@ Backend evidence summary attached in follow-up PR comment."
 fi
 
 set_task_status "completed" "success"
+record_task_memory "completed" "success"
 log "Task completed"
 log "Log file: $LOG_FILE"
