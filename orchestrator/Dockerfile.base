@@ -37,7 +37,7 @@ RUN npx playwright install-deps chromium
 RUN npx playwright install chromium
 
 # Install agent CLIs
-RUN npm install -g @openai/codex @qwen-code/qwen-code headroom-ai || true
+RUN npm install -g @openai/codex @qwen-code/qwen-code || true
 
 ARG RTK_VERSION=0.28.2
 RUN ARCH="$(dpkg --print-architecture)" && \

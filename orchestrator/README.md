@@ -61,7 +61,6 @@ The base image currently includes:
 - FFmpeg, Xvfb, Fluxbox, screenshot tools
 - `@openai/codex`
 - `@qwen-code/qwen-code`
-- `headroom-ai`
 - `rtk`
 
 ### 2. Prepare Host Credentials
@@ -83,17 +82,6 @@ Optional:
 - `MODAL_PROFILE`
 
 Those are only needed if you still use a Modal-backed model path for non-Codex flows.
-
-Optional for Headroom:
-
-- `HEADROOM_ENABLED=1`
-  Enables a local Headroom proxy inside each task container and routes Codex calls through it.
-- `HEADROOM_PORT=8787`
-  Port used by the in-container Headroom proxy.
-- `HEADROOM_HOST=127.0.0.1`
-  Host used for the in-container proxy URL.
-- `HEADROOM_STARTUP_DELAY=2`
-  Seconds to wait after starting the Headroom proxy before launching Codex.
 
 Optional for RTK:
 
@@ -125,12 +113,6 @@ Create `~/.task-model-config.sh`:
 
 ```bash
 export SUBAGENT_MODEL="codex"
-
-# Optional Headroom integration for Codex calls inside task containers
-# export HEADROOM_ENABLED=1
-# export HEADROOM_PORT=8787
-# export HEADROOM_HOST=127.0.0.1
-# export HEADROOM_STARTUP_DELAY=2
 
 # Optional RTK integration for Codex command rewriting
 # export RTK_ENABLED=1
@@ -180,28 +162,8 @@ For each task, the runner:
 4. switches into the primary repo
 5. runs `npm install` when `package.json` exists
 6. optionally prepares an isolated RTK-enabled Codex home in-container when `RTK_ENABLED=1`
-7. optionally starts a Headroom proxy in-container for Codex calls when `HEADROOM_ENABLED=1`
-8. runs the task script
-9. if changes are meaningful, creates a branch, pushes it, and opens a PR
-
-## Headroom Integration
-
-The orchestrator now includes an optional Headroom integration for Codex-backed runs.
-
-When `HEADROOM_ENABLED=1` is present in the host environment or `~/.task-model-config.sh`:
-
-- `task-run.sh` forwards the Headroom env vars into each task container
-- the runner copies [run-codex.sh](/home/ubuntu/dev-workflow/orchestrator/docker-dev-container/run-codex.sh) into `/workspace/run-codex.sh`
-- all container-side Codex invocations go through that wrapper
-- the wrapper starts `headroom proxy --port <port>` and points Codex at `http://127.0.0.1:<port>/v1`
-
-This currently covers:
-
-- the main sub-agent execution path
-- screenshot QA review passes
-- sufficiency review passes
-
-It is disabled by default so existing Codex behavior does not change unless you opt in.
+7. runs the task script
+8. if changes are meaningful, creates a branch, pushes it, and opens a PR
 
 ## RTK Integration
 
@@ -215,13 +177,12 @@ When `RTK_ENABLED=1` is present in the host environment or `~/.task-model-config
 - it runs `rtk init -g --codex` there before launching Codex
 - Codex then runs with RTK-managed command rewriting without mutating the host-mounted `~/.codex`
 
-This currently covers the same container-side Codex invocation points as Headroom:
+This currently covers the container-side Codex invocation points that matter:
 
 - the main sub-agent execution path
 - screenshot QA review passes
 - sufficiency review passes
 
-`RTK_ENABLED` and `HEADROOM_ENABLED` can be used together.
 
 If the sub-agent exits successfully but only changes metadata or makes no meaningful app changes, the run fails.
 
