@@ -337,6 +337,12 @@ The sufficiency review now distinguishes required repos as:
 - `OK-UNCHANGED`
 - `MISSING-WORK`
 
+For repos touched by the runner:
+
+- if a repo already has an automated PR notification workflow, the runner leaves it alone
+- otherwise it adds a managed `.github/workflows/task-runner-pr-notification.yml`
+- that workflow comments on newly opened `task/*` pull requests and mentions the configured notify user so future automated PRs generate a repo-local notification signal
+
 ## Task Memory
 
 The orchestrator now includes a small Codex-native task memory layer in:

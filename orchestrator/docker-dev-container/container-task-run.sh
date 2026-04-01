@@ -152,6 +152,70 @@ collect_visual_artifacts() {
   fi
 }
 
+ensure_pr_notification_workflow() {
+  local repo_dir="$1"
+  local workflow_dir="$repo_dir/.github/workflows"
+  local workflow_file="$workflow_dir/task-runner-pr-notification.yml"
+
+  if [ -d "$workflow_dir" ]; then
+    if grep -RIlq "This comment was posted automatically to ensure you receive a notification." "$workflow_dir" 2>/dev/null; then
+      return 0
+    fi
+  fi
+
+  mkdir -p "$workflow_dir"
+  cat > "$workflow_file" <<EOF
+name: PR Notification
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Post notification comment
+        uses: actions/github-script@v7
+        with:
+          github-token: \${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const notifyUser = '${NOTIFY_USER}';
+            const branchName = context.payload.pull_request.head.ref;
+            const issue_number = context.issue.number;
+
+            if (!branchName.startsWith('task/')) {
+              console.log(\`Skipping PR #\${issue_number} - not a task branch\`);
+              return;
+            }
+
+            const taskMatch = branchName.match(/task\/(.+?)-\d{8}-\d{6}/);
+            const taskName = taskMatch ? taskMatch[1] : 'unknown';
+
+            const body = \`## 🤖 Automated PR Notification
+
+            **Task:** \\\`\${taskName}\\\`
+
+            @\${notifyUser} This PR was automatically created by the background task runner and is ready for your review.
+
+            ---
+            *This comment was posted automatically to ensure you receive a notification.*\`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue_number,
+              body: body
+            });
+
+            console.log(\`Posted notification comment on PR #\${issue_number}\`);
+EOF
+}
+
 generate_backend_evidence() {
   mkdir -p "$backend_evidence_dir"
   changed_repos=""
@@ -599,6 +663,7 @@ create_prs_and_comments() {
     [ -n "$repo" ] || continue
     local repo_dir="/workspace/$repo"
     cd "$repo_dir"
+    ensure_pr_notification_workflow "$repo_dir"
     git checkout -b "$BRANCH_NAME"
     git add -A
     git commit -m "feat: $DESCRIPTION"
