@@ -16,6 +16,7 @@ OPENCLAW_VLLM_API_KEY="${OPENCLAW_VLLM_API_KEY:-${VLLM_API_KEY:-modal-local-test
 SUBAGENT_FOREGROUND="${SUBAGENT_FOREGROUND:-0}"
 TASK_TYPE="${TASK_TYPE:-general}"
 REQUIRED_REPOS="${REQUIRED_REPOS:-}"
+REQUIRED_REPOS="${REQUIRED_REPOS//,/ }"
 
 if [ -z "$TASK_DESCRIPTION" ]; then
     echo "Usage: $0 'Task description' [agent-id] [max-turns] [model] [fallback-models]"
@@ -56,6 +57,8 @@ Task-type requirements for API tasks:
 - Inspect all repositories in the project family, not just the primary repo, before deciding scope.
 - If the symptom appears in the UI, still verify whether the real fix belongs in backend routes, controllers, serializers, validators, services, or queries.
 - If backend behavior depends on local data, restore the relevant database dump or seed data and run migrations before verification.
+- Treat previously tracked or checksum-enforced migrations as immutable unless the task explicitly requires a history rewrite. Prefer a new forward-only migration over editing an existing applied migration.
+- For migration verification, treat the restored current dump as the historical baseline. Do not replay unrelated historical migrations just to reach the new change. Register or baseline existing history as needed, then apply only the new migration files introduced by this task and verify their effect.
 - If you modify backend or API behavior, run backend tests if present and verify the affected path with a concrete request, integration flow, or end-to-end path.
 - Do not stop at UI-only changes if the issue implies a broken API contract or backend behavior."
         ;;
@@ -65,6 +68,8 @@ Task-type requirements for full-stack tasks:
 - Inspect all repositories in the project family before deciding which layers must change.
 - Treat frontend, backend, API, and persistence as potentially in scope.
 - If backend or database state is required, restore the relevant dump or seed data and run migrations before verification.
+- Treat previously tracked or checksum-enforced migrations as immutable unless the task explicitly requires a history rewrite. Prefer a new forward-only migration over editing an existing applied migration.
+- For migration verification, treat the restored current dump as the historical baseline. Do not replay unrelated historical migrations just to reach the new change. Register or baseline existing history as needed, then apply only the new migration files introduced by this task and verify their effect.
 - Verify both sides of the change: application behavior in the UI and the underlying API/backend behavior.
 - Do not mark the task complete if only one layer was updated when the bug spans multiple layers."
         ;;
@@ -100,14 +105,16 @@ Rules:
 12. If you make UI-affecting changes, you must run a relevant screenshot-producing verification path before finishing
 13. For UI work, prefer Playwright or Cypress end-to-end coverage over only unit tests when that path exists
 14. If UI changes were made and no screenshots or videos were generated, treat the task as incomplete and exit non-zero
-15. If the repository includes a database dump, seed file, or snapshot needed for local app or API behavior, install or start the required database service, restore the dump, and run the relevant migrations before verification
+15. If the repository includes a database dump, seed file, or snapshot needed for local app or API behavior, inspect the dump first to determine the database engine before installing anything. Use /workspace/detect-db-engine.sh when helpful, then install or start only the matching database service, restore the dump, and run the relevant migrations before verification
 16. If the task affects API, backend, or persistence behavior, you must verify that path explicitly; if you could not verify it, treat the task as incomplete and exit non-zero
-17. Write a concise execution note to /workspace/_task_artifacts/backend-evidence/agent-notes.txt using this exact repeated structure for every required repo you inspected:
+17. Do not edit previously applied or checksum-tracked migrations just to change historical seeds or schema defaults. If migration tracking would break, preserve old files and add a new forward-only migration instead.
+18. When verifying migrations against a restored dump, do not rerun the full unrelated historical migration chain. Treat the dump as baseline state, register existing history if needed, and apply only the new migration file or files introduced by this task unless the task explicitly requires replaying old migrations.
+19. Write a concise execution note to /workspace/_task_artifacts/backend-evidence/agent-notes.txt using this exact repeated structure for every required repo you inspected:
 REPO: <repo name>
 STATUS: changed | inspected-no-change | not-inspected
 REASON: <one concise sentence>
 VERIFICATION: <one concise sentence>
-18. When complete, exit with code 0
+20. When complete, exit with code 0
 
 Work in the directory: $(pwd)"
 
@@ -156,6 +163,8 @@ ensure_agent_workspace() {
 
 run_subagent() {
     local log_file="${1:-/tmp/openclaw-subagent-${AGENT_ID}-$(date +%s).log}"
+    local codex_timeout_seconds="${SUBAGENT_TIMEOUT_SECONDS:-2700}"
+    local codex_completion_stability_seconds="${SUBAGENT_COMPLETION_STABILITY_SECONDS:-30}"
 
     set +e
 
@@ -193,11 +202,59 @@ run_subagent() {
                 codex_cmd+=(--model "${selected_model#codex/}")
             fi
 
-            "${codex_cmd[@]}" "$MISSION_BRIEF" >> "$log_file" 2>&1 </dev/null
+            "${codex_cmd[@]}" "$MISSION_BRIEF" >> "$log_file" 2>&1 </dev/null &
+            codex_pid=$!
+            start_ts=$(date +%s)
+            last_size=-1
+            stable_since=""
+            saw_turn_completed=0
+
+            while kill -0 "$codex_pid" 2>/dev/null; do
+                now_ts=$(date +%s)
+
+                if [ $((now_ts - start_ts)) -ge "$codex_timeout_seconds" ]; then
+                    echo "[$(date -Is)] Codex sub-agent timed out after ${codex_timeout_seconds}s" >> "$log_file"
+                    kill "$codex_pid" 2>/dev/null || true
+                    sleep 2
+                    kill -9 "$codex_pid" 2>/dev/null || true
+                    wait "$codex_pid" 2>/dev/null || true
+                    return 124
+                fi
+
+                if grep -q '"type":"turn.completed"' "$log_file" 2>/dev/null; then
+                    saw_turn_completed=1
+                    current_size=$(wc -c < "$log_file" 2>/dev/null || echo 0)
+                    if [ "$current_size" = "$last_size" ]; then
+                        if [ -z "$stable_since" ]; then
+                            stable_since="$now_ts"
+                        elif [ $((now_ts - stable_since)) -ge "$codex_completion_stability_seconds" ]; then
+                            echo "[$(date -Is)] Codex sub-agent reached turn.completed and log was stable for ${codex_completion_stability_seconds}s; terminating lingering process" >> "$log_file"
+                            kill "$codex_pid" 2>/dev/null || true
+                            sleep 2
+                            kill -9 "$codex_pid" 2>/dev/null || true
+                            wait "$codex_pid" 2>/dev/null || true
+                            echo "[$(date -Is)] Codex sub-agent completed with model: ${selected_model}" >> "$log_file"
+                            return 0
+                        fi
+                    else
+                        last_size="$current_size"
+                        stable_since="$now_ts"
+                    fi
+                fi
+
+                sleep 2
+            done
+
+            wait "$codex_pid"
             exit_code=$?
 
             if [ "$exit_code" -eq 0 ]; then
                 echo "[$(date -Is)] Codex sub-agent completed with model: ${selected_model}" >> "$log_file"
+                return 0
+            fi
+
+            if [ "$saw_turn_completed" -eq 1 ]; then
+                echo "[$(date -Is)] Codex sub-agent exited non-zero after turn.completed; treating as completed" >> "$log_file"
                 return 0
             fi
 

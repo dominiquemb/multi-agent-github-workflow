@@ -88,6 +88,23 @@ Optional for RTK:
 - `RTK_ENABLED=1`
   Enables RTK's Codex integration inside each task container using an isolated in-container Codex home.
 
+Optional for repo-local key and env files:
+
+- declare per-project secret file mappings in `~/.task-project-config.sh`
+- format: `repo|path/inside/repo|/absolute/host/path`
+- separate multiple mappings with `;`
+
+Example:
+
+```bash
+healthtrac_secret_files="\
+arsmetr_backend|keys/supabase-anon-key.json|/home/ubuntu/task-secrets/healthtrac/arsmetr_backend/keys/supabase-anon-key.json;\
+arsmetr_backend|keys/stripe-secret-key.json|/home/ubuntu/task-secrets/healthtrac/arsmetr_backend/keys/stripe-secret-key.json;\
+arsmetr_backend|.env|/home/ubuntu/task-secrets/healthtrac/arsmetr_backend/.env"
+```
+
+At task startup, the runner mounts those host files read-only into the container and copies them into the declared repo-relative paths after cloning. This is intended for local-only files that are required for tests or server startup but should not live in git.
+
 ### 3. Configure Project Families
 
 Create `~/.task-project-config.sh`:
@@ -99,6 +116,10 @@ healthtrac_primary="HT360_Web"
 HT360_Web_url="git@github.com:sorogersep/HT360-Web.git"
 arsmetr_backend_url="git@github.com:healthtrac/arsmetr-backend.git"
 arsmetr_mobile_url="git@github.com:healthtrac/arsmetr-mobile.git"
+
+healthtrac_secret_files="\
+arsmetr_backend|keys/supabase-anon-key.json|/home/ubuntu/task-secrets/healthtrac/arsmetr_backend/keys/supabase-anon-key.json;\
+arsmetr_backend|keys/stripe-secret-key.json|/home/ubuntu/task-secrets/healthtrac/arsmetr_backend/keys/stripe-secret-key.json"
 ```
 
 The runner uses this file to decide:

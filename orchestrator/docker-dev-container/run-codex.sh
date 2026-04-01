@@ -15,7 +15,7 @@ setup_rtk_for_codex() {
         return 0
     fi
 
-    local runtime_home="/tmp/rtk-codex-home"
+    local runtime_home="/root/rtk-codex-home"
     local runtime_codex_dir="${runtime_home}/.codex"
     local log_file="${RTK_LOG_DIR}/rtk-codex-init-$(date +%s)-$$.log"
 
